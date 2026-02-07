@@ -3,7 +3,11 @@ import { Construct } from "constructs";
 import { Queue } from "aws-cdk-lib/aws-sqs";
 import { Bucket, EventType } from "aws-cdk-lib/aws-s3";
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
-import { Runtime } from "aws-cdk-lib/aws-lambda";
+import {
+  Runtime,
+  DockerImageCode,
+  DockerImageFunction,
+} from "aws-cdk-lib/aws-lambda";
 import { LambdaDestination } from "aws-cdk-lib/aws-s3-notifications";
 import { SqsEventSource } from "aws-cdk-lib/aws-lambda-event-sources";
 import { Topic } from "aws-cdk-lib/aws-sns";
@@ -17,12 +21,12 @@ import { EmailSubscription } from "aws-cdk-lib/aws-sns-subscriptions";
 
 class TempInfraConstruct extends Construct {
   public readonly s3Bucket: Bucket;
-  public readonly putSqsQueue: Queue;
+  public readonly putEventsSqsQueue: Queue;
   public readonly putSqsDlq: Queue;
-  public readonly deleteSqsQueue: Queue;
+  public readonly deleteEventsSqsQueue: Queue;
   public readonly deleteSqsDlq: Queue;
-  public readonly putLambda: NodejsFunction;
-  public readonly deleteLambda: NodejsFunction;
+  public readonly putEventsLambda: NodejsFunction;
+  public readonly deleteEventsLambda: NodejsFunction;
   public readonly validateUploadedFilesLambda: NodejsFunction;
   public readonly removeDeletedFilesLambda: NodejsFunction;
 
@@ -62,7 +66,7 @@ class TempInfraConstruct extends Construct {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
-    this.putSqsQueue = new Queue(this, "putSqsQueue", {
+    this.putEventsSqsQueue = new Queue(this, "putEventsSqsQueue", {
       enforceSSL: true,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       retentionPeriod: cdk.Duration.minutes(10),
@@ -73,7 +77,7 @@ class TempInfraConstruct extends Construct {
       },
     });
 
-    this.deleteSqsQueue = new Queue(this, "deleteSqsQueue", {
+    this.deleteEventsSqsQueue = new Queue(this, "deleteEventsSqsQueue", {
       enforceSSL: true,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       retentionPeriod: cdk.Duration.minutes(10),
@@ -84,7 +88,7 @@ class TempInfraConstruct extends Construct {
       },
     });
 
-    this.putLambda = new NodejsFunction(this, "putLambda", {
+    this.putEventsLambda = new NodejsFunction(this, "putEventsLambda", {
       runtime: Runtime.NODEJS_24_X,
       description:
         "This is responsible for receiving s3 put events and pushing it to the put sqs queue",
@@ -92,14 +96,13 @@ class TempInfraConstruct extends Construct {
       timeout: cdk.Duration.seconds(30),
       handler: "index.handler",
       entry: "./workers/handlePutEvents.ts",
-      layers: [], //FIXME: NEEDS CLAMAV LAMBDA LAYER
       retryAttempts: 2,
       environment: {
-        SQS_QUEUE_ARN: this.putSqsQueue.queueArn,
+        SQS_QUEUE_URL: this.putEventsSqsQueue.queueUrl,
       },
     });
 
-    this.deleteLambda = new NodejsFunction(this, "deleteLambda", {
+    this.deleteEventsLambda = new NodejsFunction(this, "deleteEventsLambda", {
       runtime: Runtime.NODEJS_24_X,
       description:
         "This is responsible for receiving s3 delete events and pushing it to the delete sqs queue",
@@ -109,23 +112,24 @@ class TempInfraConstruct extends Construct {
       handler: "index.handler",
       entry: "./workers/handleDeleteEvents.ts",
       environment: {
-        SQS_QUEUE_ARN: this.deleteSqsQueue.queueArn,
+        SQS_QUEUE_URL: this.deleteEventsSqsQueue.queueUrl,
       },
     });
 
-    this.validateUploadedFilesLambda = new NodejsFunction(
+    this.validateUploadedFilesLambda = new DockerImageFunction(
       this,
       "validateUploadedFilesLambda",
       {
-        runtime: Runtime.NODEJS_24_X,
-        handler: "index.handler",
-        entry: "./workers/handleValidateFile.ts",
         description:
           "This is responsible for validating the files that were put/uploaded to the s3 bucket & updating the status of the files",
+        code: DockerImageCode.fromImageAsset(
+          "./workers/validateUploadedFiles",
+          { file: "Dockerfile" },
+        ),
         retryAttempts: 2,
-        memorySize: 1024 * 2,
+        memorySize: 1024 * 2.5,
         timeout: cdk.Duration.minutes(2.5),
-        ephemeralStorageSize: cdk.Size.gibibytes(2.5),
+        ephemeralStorageSize: cdk.Size.gibibytes(2),
       },
     );
 
@@ -145,7 +149,7 @@ class TempInfraConstruct extends Construct {
     );
 
     this.validateUploadedFilesLambda.addEventSource(
-      new SqsEventSource(this.putSqsQueue, {
+      new SqsEventSource(this.putEventsSqsQueue, {
         batchSize: 5,
         reportBatchItemFailures: true,
         maxBatchingWindow: cdk.Duration.seconds(30),
@@ -153,28 +157,34 @@ class TempInfraConstruct extends Construct {
     );
 
     this.removeDeletedFilesLambda.addEventSource(
-      new SqsEventSource(this.deleteSqsQueue, {
+      new SqsEventSource(this.deleteEventsSqsQueue, {
         batchSize: 10,
         reportBatchItemFailures: true,
         maxBatchingWindow: cdk.Duration.minutes(1),
       }),
     );
 
-    this.putSqsQueue.grantSendMessages(this.putLambda);
-    this.deleteSqsQueue.grantSendMessages(this.deleteLambda);
+    this.putEventsSqsQueue.grantSendMessages(this.putEventsLambda);
+    this.deleteEventsSqsQueue.grantSendMessages(this.deleteEventsLambda);
 
-    this.putSqsQueue.grantConsumeMessages(this.validateUploadedFilesLambda);
-    this.deleteSqsQueue.grantConsumeMessages(this.removeDeletedFilesLambda);
+    this.putEventsSqsQueue.grantConsumeMessages(
+      this.validateUploadedFilesLambda,
+    );
+    this.deleteEventsSqsQueue.grantConsumeMessages(
+      this.removeDeletedFilesLambda,
+    );
 
     this.s3Bucket.addEventNotification(
       EventType.OBJECT_CREATED_PUT,
-      new LambdaDestination(this.putLambda),
+      new LambdaDestination(this.putEventsLambda),
     );
 
     this.s3Bucket.addEventNotification(
       EventType.OBJECT_REMOVED_DELETE,
-      new LambdaDestination(this.deleteLambda),
+      new LambdaDestination(this.deleteEventsLambda),
     );
+
+    this.s3Bucket.grantRead(this.validateUploadedFilesLambda);
 
     //observability stuff
     const notificationTopic = new Topic(this, "notificationTopic", {
@@ -183,7 +193,7 @@ class TempInfraConstruct extends Construct {
     });
 
     notificationTopic.addSubscription(
-      new EmailSubscription(""), //FIXME:
+      new EmailSubscription("subomifasakin@icloud.com"), //FIXME: remove laer
     );
 
     const lambdaProcessingTimeAlarm = new Alarm(
@@ -197,7 +207,7 @@ class TempInfraConstruct extends Construct {
         }),
         comparisonOperator:
           ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
-        alarmDescription: "File validation time is too long",
+        alarmDescription: "File validation is taking too long",
       },
     );
 
