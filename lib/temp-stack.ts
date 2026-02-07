@@ -22,6 +22,10 @@ import { Secret } from "aws-cdk-lib/aws-secretsmanager";
 import { User } from "aws-cdk-lib/aws-iam";
 import { CfnOutput } from "aws-cdk-lib/core";
 
+interface TempConstructProps {
+  notificationEmail: string;
+}
+
 class TempInfraConstruct extends Construct {
   public readonly s3Bucket: Bucket;
   public readonly putEventsSqsQueue: Queue;
@@ -36,7 +40,7 @@ class TempInfraConstruct extends Construct {
   private readonly applicationUser: User;
   private readonly webhookApiKeySecret: Secret;
 
-  constructor(scope: Construct, id: string) {
+  constructor(scope: Construct, id: string, props: TempConstructProps) {
     super(scope, id);
 
     this.applicationUser = new User(this, "applicationUser");
@@ -220,11 +224,11 @@ class TempInfraConstruct extends Construct {
     //observability stuff
     const notificationTopic = new Topic(this, "notificationTopic", {
       enforceSSL: true,
-      displayName: "Notification Topic",
+      displayName: "File Processing Service Alerts",
     });
 
     notificationTopic.addSubscription(
-      new EmailSubscription("subomifasakin@icloud.com"), //FIXME: remove laer
+      new EmailSubscription(props.notificationEmail),
     );
 
     const lambdaProcessingTimeAlarm = new Alarm(
@@ -279,9 +283,15 @@ class TempInfraConstruct extends Construct {
 }
 
 export class TempStack extends cdk.Stack {
-  constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+  constructor(
+    scope: Construct,
+    id: string,
+    props: TempConstructProps & cdk.StackProps,
+  ) {
     super(scope, id, props);
 
-    new TempInfraConstruct(this, "TempInfraResources");
+    new TempInfraConstruct(this, "TempInfraResources", {
+      notificationEmail: props.notificationEmail,
+    });
   }
 }
