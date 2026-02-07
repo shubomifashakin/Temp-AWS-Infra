@@ -3,6 +3,7 @@ import { SQSEvent } from "aws-lambda";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { spawn } from "child_process";
 import { createWriteStream, unlinkSync } from "fs";
+import { unlink } from "fs/promises";
 import { pipeline } from "stream/promises";
 
 export interface PutFileRecord {
@@ -100,11 +101,9 @@ async function processRecord(
       error: error as Error,
     };
   } finally {
-    try {
-      unlinkSync(localPath);
-    } catch (e) {
-      console.log(`Failed to delete ${localPath}:`, e);
-    }
+    await unlink(localPath).catch((e) => {
+      console.error(`Failed to delete ${localPath}:`, e);
+    });
   }
 }
 
@@ -163,10 +162,8 @@ async function scanFile(filePath: string): Promise<ScanResult> {
       console.log(`ClamAV full output: ${stdout}`);
 
       if (code === 0) {
-        // Clean file
         resolve({ infected: false });
       } else if (code === 1) {
-        // Infected file - parse virus name
         const virusMatch = stdout.match(/:\s*(.+?)\s+FOUND/);
         const virusName = virusMatch ? virusMatch[1].trim() : "Unknown";
         resolve({
@@ -174,7 +171,6 @@ async function scanFile(filePath: string): Promise<ScanResult> {
           virus: virusName,
         });
       } else {
-        // Error
         console.error(`ClamAV error output: ${stderr}`);
         reject(new Error(`ClamAV scan failed with code ${code}: ${stderr}`));
       }
