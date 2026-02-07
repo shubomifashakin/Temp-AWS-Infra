@@ -14,6 +14,7 @@ import { Topic } from "aws-cdk-lib/aws-sns";
 import {
   Alarm,
   ComparisonOperator,
+  Stats,
   TreatMissingData,
 } from "aws-cdk-lib/aws-cloudwatch";
 import { SnsAction } from "aws-cdk-lib/aws-cloudwatch-actions";
@@ -264,9 +265,40 @@ class TempInfraConstruct extends Construct {
       alarmDescription: "There are more than 2 messages in the delete sqs dlq",
     });
 
-    putDlqAlarm.addAlarmAction(new SnsAction(notificationTopic));
-    deleteDlqAlarm.addAlarmAction(new SnsAction(notificationTopic));
-    lambdaProcessingTimeAlarm.addAlarmAction(new SnsAction(notificationTopic));
+    const putQueueDepthAlarm = new Alarm(this, "putQueueDepthAlarm", {
+      threshold: 20,
+      evaluationPeriods: 1,
+      metric: this.putEventsSqsQueue.metricApproximateNumberOfMessagesVisible({
+        period: cdk.Duration.minutes(2),
+        statistic: Stats.AVERAGE,
+      }),
+      comparisonOperator: ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      alarmDescription:
+        "Put queue has too many messages, processing is too slow",
+    });
+
+    const deleteQueueDepthAlarm = new Alarm(this, "deleteQueueDepthAlarm", {
+      threshold: 20,
+      evaluationPeriods: 1,
+      metric:
+        this.deleteEventsSqsQueue.metricApproximateNumberOfMessagesVisible({
+          period: cdk.Duration.minutes(2),
+          statistic: Stats.AVERAGE,
+        }),
+      comparisonOperator: ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      alarmDescription:
+        "Delete queue has too many messages, processing is too slow",
+    });
+
+    [
+      putDlqAlarm,
+      deleteDlqAlarm,
+      lambdaProcessingTimeAlarm,
+      putQueueDepthAlarm,
+      deleteQueueDepthAlarm,
+    ].forEach((alarm) =>
+      alarm.addAlarmAction(new SnsAction(notificationTopic)),
+    );
 
     new CfnOutput(this, "applicationUsername", {
       value: this.applicationUser.userName,
