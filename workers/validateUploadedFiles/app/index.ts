@@ -1,5 +1,10 @@
 import { SQSEvent } from "aws-lambda";
 
+import {
+  GetSecretValueCommand,
+  SecretsManagerClient,
+} from "@aws-sdk/client-secrets-manager";
+
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { spawn } from "child_process";
 import { createWriteStream, unlinkSync } from "fs";
@@ -12,9 +17,12 @@ export interface PutFileRecord {
   eventType: string;
 }
 
-const AWS_REGION = process.env.AWS_REGION;
+const awsRegion = process.env.AWS_REGION;
+const webhookSecretArn = process.env.WEBHOOK_SECRET_ARN!;
 
-const s3Client = new S3Client({ region: AWS_REGION });
+const secretsManagerClient = new SecretsManagerClient({ region: awsRegion });
+
+const s3Client = new S3Client({ region: awsRegion });
 const CLAMAV_DB_PATH = "/var/lib/clamav";
 
 interface ScanResult {
@@ -33,10 +41,24 @@ export const handler = async (
 }> => {
   const batchItemFailures: { itemIdentifier: string }[] = [];
 
+  const secret = await secretsManagerClient.send(
+    new GetSecretValueCommand({
+      SecretId: webhookSecretArn,
+    }),
+  );
+
+  if (!secret.SecretString) {
+    throw new Error("Secret string is empty");
+  }
+
+  const parsedSecretsString = JSON.parse(secret.SecretString) as {
+    apiKey: string;
+  };
+
   for (const record of event.Records) {
     const body = JSON.parse(record.body) as PutFileRecord;
 
-    const result = await processRecord(body);
+    const result = await processRecord(body, parsedSecretsString.apiKey);
 
     if (!result.success) {
       batchItemFailures.push({ itemIdentifier: record.messageId });
@@ -50,6 +72,7 @@ export const handler = async (
 
 async function processRecord(
   record: PutFileRecord,
+  apiKey: string,
 ): Promise<FnResult<ScanResult>> {
   const bucket = record.bucket;
   const key = decodeURIComponent(record.key.replace(/\+/g, " "));
@@ -72,20 +95,27 @@ async function processRecord(
     console.log("Scan result:", scanResult);
 
     // FIXME: send the status to the API
-    // const response = await fetch("https://temp.545plea.xyz/api", {
-    //   method: "POST",
-    //   body: JSON.stringify({ status: scanResult.infected, fileName: key }),
-    //   headers: {
-    //     "Content-Type": "application/json",
-    //     "X-API-Key": "your-api-key-here", //
-    //   },
-    // });
+    const response = await fetch(
+      "https://api-temp.545plea.xyz/api/v1/webhook/file-events",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          fileName: key,
+          eventType: "file:uploaded",
+          status: scanResult.infected,
+        }),
+        headers: {
+          "x-api-key": apiKey,
+          "Content-Type": "application/json",
+        },
+      },
+    );
 
-    // if (!response.ok) {
-    //   console.error(`Failed to send result for ${key}:`, response.statusText);
+    if (!response.ok) {
+      console.error(`Failed to send result for ${key}:`, response.statusText);
 
-    //   throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    // }
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
 
     return {
       success: true,

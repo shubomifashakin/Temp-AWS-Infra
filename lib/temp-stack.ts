@@ -18,6 +18,7 @@ import {
 } from "aws-cdk-lib/aws-cloudwatch";
 import { SnsAction } from "aws-cdk-lib/aws-cloudwatch-actions";
 import { EmailSubscription } from "aws-cdk-lib/aws-sns-subscriptions";
+import { Secret } from "aws-cdk-lib/aws-secretsmanager";
 
 class TempInfraConstruct extends Construct {
   public readonly s3Bucket: Bucket;
@@ -30,8 +31,15 @@ class TempInfraConstruct extends Construct {
   public readonly validateUploadedFilesLambda: NodejsFunction;
   public readonly removeDeletedFilesLambda: NodejsFunction;
 
+  private readonly webhookApiKeySecret: Secret;
+
   constructor(scope: Construct, id: string) {
     super(scope, id);
+
+    this.webhookApiKeySecret = new Secret(this, "webhookApiKeySecret", {
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      description: "Secret for webhook authentication",
+    });
 
     this.s3Bucket = new Bucket(this, "tempS3Bucket", {
       enforceSSL: true,
@@ -130,6 +138,9 @@ class TempInfraConstruct extends Construct {
         memorySize: 1024 * 2.5,
         timeout: cdk.Duration.minutes(2.5),
         ephemeralStorageSize: cdk.Size.gibibytes(2),
+        environment: {
+          WEBHOOK_SECRET_ARN: this.webhookApiKeySecret.secretArn,
+        },
       },
     );
 
@@ -145,6 +156,9 @@ class TempInfraConstruct extends Construct {
         memorySize: 512,
         retryAttempts: 2,
         timeout: cdk.Duration.minutes(1),
+        environment: {
+          WEBHOOK_SECRET_ARN: this.webhookApiKeySecret.secretArn,
+        },
       },
     );
 
@@ -159,7 +173,6 @@ class TempInfraConstruct extends Construct {
     this.removeDeletedFilesLambda.addEventSource(
       new SqsEventSource(this.deleteEventsSqsQueue, {
         batchSize: 10,
-        reportBatchItemFailures: true,
         maxBatchingWindow: cdk.Duration.minutes(1),
       }),
     );
@@ -185,6 +198,9 @@ class TempInfraConstruct extends Construct {
     );
 
     this.s3Bucket.grantRead(this.validateUploadedFilesLambda);
+
+    this.webhookApiKeySecret.grantRead(this.removeDeletedFilesLambda);
+    this.webhookApiKeySecret.grantRead(this.validateUploadedFilesLambda);
 
     //observability stuff
     const notificationTopic = new Topic(this, "notificationTopic", {
