@@ -19,6 +19,8 @@ import {
 import { SnsAction } from "aws-cdk-lib/aws-cloudwatch-actions";
 import { EmailSubscription } from "aws-cdk-lib/aws-sns-subscriptions";
 import { Secret } from "aws-cdk-lib/aws-secretsmanager";
+import { User } from "aws-cdk-lib/aws-iam";
+import { CfnOutput } from "aws-cdk-lib/core";
 
 class TempInfraConstruct extends Construct {
   public readonly s3Bucket: Bucket;
@@ -31,10 +33,13 @@ class TempInfraConstruct extends Construct {
   public readonly validateUploadedFilesLambda: NodejsFunction;
   public readonly removeDeletedFilesLambda: NodejsFunction;
 
+  private readonly applicationUser: User;
   private readonly webhookApiKeySecret: Secret;
 
   constructor(scope: Construct, id: string) {
     super(scope, id);
+
+    this.applicationUser = new User(this, "applicationUser");
 
     this.webhookApiKeySecret = new Secret(this, "webhookApiKeySecret", {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
@@ -43,6 +48,9 @@ class TempInfraConstruct extends Construct {
         passwordLength: 32,
         includeSpace: false,
         generateStringKey: "apiKey",
+        secretStringTemplate: JSON.stringify({
+          apiKey: "",
+        }),
       },
     });
 
@@ -202,6 +210,8 @@ class TempInfraConstruct extends Construct {
       new LambdaDestination(this.deleteEventsLambda),
     );
 
+    this.s3Bucket.grantPut(this.applicationUser);
+    this.s3Bucket.grantRead(this.applicationUser);
     this.s3Bucket.grantRead(this.validateUploadedFilesLambda);
 
     this.webhookApiKeySecret.grantRead(this.removeDeletedFilesLambda);
@@ -253,6 +263,16 @@ class TempInfraConstruct extends Construct {
     putDlqAlarm.addAlarmAction(new SnsAction(notificationTopic));
     deleteDlqAlarm.addAlarmAction(new SnsAction(notificationTopic));
     lambdaProcessingTimeAlarm.addAlarmAction(new SnsAction(notificationTopic));
+
+    new CfnOutput(this, "applicationUsername", {
+      value: this.applicationUser.userName,
+      description: "IAM username for NestJS application",
+    });
+
+    new CfnOutput(this, "S3BucketName", {
+      value: this.s3Bucket.bucketName,
+      description: "S3 Bucket name for file uploads",
+    });
   }
 }
 
