@@ -39,6 +39,11 @@ class TempInfraConstruct extends Construct {
     this.webhookApiKeySecret = new Secret(this, "webhookApiKeySecret", {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       description: "Secret for webhook authentication",
+      generateSecretString: {
+        passwordLength: 32,
+        includeSpace: false,
+        generateStringKey: "apiKey",
+      },
     });
 
     this.s3Bucket = new Bucket(this, "tempS3Bucket", {
