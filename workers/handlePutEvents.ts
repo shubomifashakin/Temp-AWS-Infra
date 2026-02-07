@@ -4,23 +4,31 @@ import { SendMessageBatchCommand, SQSClient } from "@aws-sdk/client-sqs";
 
 import { v4 as uuid } from "uuid";
 
+export interface PutFileRecord {
+  key: string;
+  bucket: string;
+  eventType: string;
+}
+
 const region = process.env.AWS_REGION!;
-const SQS_ARN = process.env.SQS_QUEUE_ARN!;
+const SQS_URL = process.env.SQS_QUEUE_URL!;
 
 const sqsClient = new SQSClient({ region });
 
 async function sendBatchWithRetry(
-  keys: string[],
+  records: PutFileRecord[],
   maxRetries = 3,
 ): Promise<void> {
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     const sendMessageCommand = new SendMessageBatchCommand({
-      QueueUrl: SQS_ARN,
-      Entries: keys.map((key) => ({
+      QueueUrl: SQS_URL,
+
+      Entries: records.map((record) => ({
         Id: uuid(),
         MessageBody: JSON.stringify({
-          key,
-          eventType: EventType.OBJECT_CREATED_PUT,
+          key: record.key,
+          bucket: record.bucket,
+          eventType: record.eventType,
         }),
       })),
     });
@@ -39,14 +47,18 @@ async function sendBatchWithRetry(
 
     await new Promise((resolve) => setTimeout(resolve, 2000));
 
-    keys = keys.filter((key) => failedKeys.includes(key));
+    records = records.filter((record) => failedKeys.includes(record.key));
   }
 }
 
 export async function handler(event: S3Event) {
-  const allKeys = event.Records.map((record) => record.s3.object.key);
+  const records: PutFileRecord[] = event.Records.map((record) => ({
+    key: record.s3.object.key,
+    bucket: record.s3.bucket.name,
+    eventType: EventType.OBJECT_CREATED_PUT,
+  }));
 
-  await sendBatchWithRetry(allKeys, 4);
+  await sendBatchWithRetry(records, 4);
 
   return {
     statusCode: 200,

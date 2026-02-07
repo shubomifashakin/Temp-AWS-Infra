@@ -5,7 +5,7 @@ import { SendMessageBatchCommand, SQSClient } from "@aws-sdk/client-sqs";
 import { v4 as uuid } from "uuid";
 
 const region = process.env.AWS_REGION!;
-const SQS_ARN = process.env.SQS_QUEUE_ARN!;
+const SQS_URL = process.env.SQS_QUEUE_URL!;
 
 const sqsClient = new SQSClient({ region });
 
@@ -15,7 +15,7 @@ async function sendBatchWithRetry(
 ): Promise<void> {
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     const sendMessageCommand = new SendMessageBatchCommand({
-      QueueUrl: SQS_ARN,
+      QueueUrl: SQS_URL,
       Entries: keys.map((key) => ({
         Id: uuid(),
         MessageBody: JSON.stringify({
