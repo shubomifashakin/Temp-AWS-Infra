@@ -266,11 +266,13 @@ class TempInfraConstruct extends Construct {
 
     new CfnOutput(this, "applicationUsername", {
       value: this.applicationUser.userName,
+      exportName: "applicationUsername",
       description: "IAM username for NestJS application",
     });
 
     new CfnOutput(this, "S3BucketName", {
       value: this.s3Bucket.bucketName,
+      exportName: "S3BucketName",
       description: "S3 Bucket name for file uploads",
     });
   }
