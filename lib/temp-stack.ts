@@ -64,6 +64,11 @@ class TempInfraConstruct extends Construct {
       lifecycleRules: [
         {
           enabled: true,
+          tagFilters: { lifetime: "immediate" },
+          expiration: cdk.Duration.days(1), //FIXME: THIS IS ONLY FOR TESTING, DONT FORGET TO REMOVE THIS
+        },
+        {
+          enabled: true,
           tagFilters: { lifetime: "short" },
           expiration: cdk.Duration.days(7),
         },
