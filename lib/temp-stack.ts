@@ -264,6 +264,8 @@ class TempInfraConstruct extends Construct {
     this.s3Bucket.grantRead(this.validateUploadedFilesLambda);
     this.s3Bucket.grantDelete(this.userRequestedDeleteLambda);
 
+    this.userRequestedDeleteQueue.grantSendMessages(this.applicationUser);
+
     this.webhookApiKeySecret.grantRead(this.removeDeletedFilesLambda);
     this.webhookApiKeySecret.grantRead(this.validateUploadedFilesLambda);
 
