@@ -216,7 +216,7 @@ class TempInfraConstruct extends Construct {
     );
 
     this.s3Bucket.addEventNotification(
-      EventType.OBJECT_REMOVED_DELETE,
+      EventType.LIFECYCLE_EXPIRATION_DELETE,
       new LambdaDestination(this.deleteEventsLambda),
     );
 
