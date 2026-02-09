@@ -22,6 +22,7 @@ import { EmailSubscription } from "aws-cdk-lib/aws-sns-subscriptions";
 import { Secret } from "aws-cdk-lib/aws-secretsmanager";
 import { User } from "aws-cdk-lib/aws-iam";
 import { CfnOutput } from "aws-cdk-lib/core";
+import { LogGroup, RetentionDays } from "aws-cdk-lib/aws-logs";
 
 interface TempConstructProps {
   notificationEmail: string;
@@ -147,6 +148,9 @@ class TempInfraConstruct extends Construct {
         environment: {
           BUCKET_NAME: this.s3Bucket.bucketName,
         },
+        logGroup: new LogGroup(this, "userRequestedDeleteLambdaLogGroup", {
+          retention: RetentionDays.FIVE_DAYS,
+        }),
       },
     );
 
@@ -162,6 +166,9 @@ class TempInfraConstruct extends Construct {
       environment: {
         SQS_QUEUE_URL: this.putEventsSqsQueue.queueUrl,
       },
+      logGroup: new LogGroup(this, "putEventsLambdaLogGroup", {
+        retention: RetentionDays.FIVE_DAYS,
+      }),
     });
 
     this.deleteEventsLambda = new NodejsFunction(this, "deleteEventsLambda", {
@@ -176,6 +183,9 @@ class TempInfraConstruct extends Construct {
       environment: {
         SQS_QUEUE_URL: this.deleteEventsSqsQueue.queueUrl,
       },
+      logGroup: new LogGroup(this, "deleteEventsLambdaLogGroup", {
+        retention: RetentionDays.FIVE_DAYS,
+      }),
     });
 
     this.validateUploadedFilesLambda = new DockerImageFunction(
@@ -195,6 +205,9 @@ class TempInfraConstruct extends Construct {
         environment: {
           WEBHOOK_SECRET_ARN: this.webhookApiKeySecret.secretArn,
         },
+        logGroup: new LogGroup(this, "validateUploadedFilesLambdaLogGroup", {
+          retention: RetentionDays.FIVE_DAYS,
+        }),
       },
     );
 
@@ -213,6 +226,9 @@ class TempInfraConstruct extends Construct {
         environment: {
           WEBHOOK_SECRET_ARN: this.webhookApiKeySecret.secretArn,
         },
+        logGroup: new LogGroup(this, "removeDeletedFilesLambdaLogGroup", {
+          retention: RetentionDays.FIVE_DAYS,
+        }),
       },
     );
 
