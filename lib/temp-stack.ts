@@ -29,10 +29,12 @@ interface TempConstructProps {
 
 class TempInfraConstruct extends Construct {
   public readonly s3Bucket: Bucket;
+  public readonly userRequestedDeleteQueue: Queue;
   public readonly putEventsSqsQueue: Queue;
   public readonly putSqsDlq: Queue;
   public readonly deleteEventsSqsQueue: Queue;
   public readonly deleteSqsDlq: Queue;
+  public readonly userRequestedDeleteLambda: NodejsFunction;
   public readonly putEventsLambda: NodejsFunction;
   public readonly deleteEventsLambda: NodejsFunction;
   public readonly validateUploadedFilesLambda: NodejsFunction;
@@ -85,6 +87,17 @@ class TempInfraConstruct extends Construct {
       ],
     });
 
+    this.userRequestedDeleteQueue = new Queue(
+      this,
+      "userRequestedDeleteQueue",
+      {
+        enforceSSL: true,
+        visibilityTimeout: cdk.Duration.minutes(3),
+        retentionPeriod: cdk.Duration.minutes(10),
+        removalPolicy: cdk.RemovalPolicy.DESTROY,
+      },
+    );
+
     this.putSqsDlq = new Queue(this, "putSqsDlq", {
       enforceSSL: true,
       retentionPeriod: cdk.Duration.days(7),
@@ -118,6 +131,24 @@ class TempInfraConstruct extends Construct {
         queue: this.deleteSqsDlq,
       },
     });
+
+    this.userRequestedDeleteLambda = new NodejsFunction(
+      this,
+      "userRequestedDeleteLambda",
+      {
+        runtime: Runtime.NODEJS_24_X,
+        description:
+          "This is responsible for deleting files users explicitly requested to be deleted",
+        memorySize: 256,
+        timeout: cdk.Duration.minutes(1.5),
+        handler: "index.handler",
+        entry: "./workers/handleUserRequestedDelete.ts",
+        retryAttempts: 2,
+        environment: {
+          BUCKET_NAME: this.s3Bucket.bucketName,
+        },
+      },
+    );
 
     this.putEventsLambda = new NodejsFunction(this, "putEventsLambda", {
       runtime: Runtime.NODEJS_24_X,
@@ -185,6 +216,14 @@ class TempInfraConstruct extends Construct {
       },
     );
 
+    this.userRequestedDeleteLambda.addEventSource(
+      new SqsEventSource(this.userRequestedDeleteQueue, {
+        batchSize: 5,
+        reportBatchItemFailures: true,
+        maxBatchingWindow: cdk.Duration.seconds(30),
+      }),
+    );
+
     this.validateUploadedFilesLambda.addEventSource(
       new SqsEventSource(this.putEventsSqsQueue, {
         batchSize: 5,
@@ -223,6 +262,7 @@ class TempInfraConstruct extends Construct {
     this.s3Bucket.grantPut(this.applicationUser);
     this.s3Bucket.grantRead(this.applicationUser);
     this.s3Bucket.grantRead(this.validateUploadedFilesLambda);
+    this.s3Bucket.grantDelete(this.userRequestedDeleteLambda);
 
     this.webhookApiKeySecret.grantRead(this.removeDeletedFilesLambda);
     this.webhookApiKeySecret.grantRead(this.validateUploadedFilesLambda);
@@ -315,6 +355,12 @@ class TempInfraConstruct extends Construct {
       value: this.s3Bucket.bucketName,
       exportName: "S3BucketName",
       description: "S3 Bucket name for file uploads",
+    });
+
+    new CfnOutput(this, "userRequestedDeleteQueueUrl", {
+      value: this.userRequestedDeleteQueue.queueUrl,
+      exportName: "userRequestedDeleteQueueUrl",
+      description: "SQS Url for sending delete requests",
     });
   }
 }
