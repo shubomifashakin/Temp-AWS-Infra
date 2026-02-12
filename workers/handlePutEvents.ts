@@ -38,6 +38,10 @@ async function sendBatchWithRetry(
     if (!response.Failed?.length) return;
 
     if (attempt === maxRetries - 1) {
+      console.error(
+        `Failed to send ${response.Failed.length} messages after ${maxRetries} attempts`,
+      );
+
       throw new Error(
         `Failed to send ${response.Failed.length} messages after ${maxRetries} attempts`,
       );
@@ -58,7 +62,11 @@ export async function handler(event: S3Event) {
     eventType: EventType.OBJECT_CREATED_PUT,
   }));
 
+  console.log(`Batching ${records.length} put events`);
+
   await sendBatchWithRetry(records, 4);
+
+  console.log(`Batched ${records.length} put events`);
 
   return {
     statusCode: 200,

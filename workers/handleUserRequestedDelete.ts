@@ -24,9 +24,11 @@ export async function handler(event: SQSEvent) {
 
   for (const record of event.Records) {
     try {
+      console.log("Processing record:", record);
       const body = JSON.parse(record.body) as MessageBody;
       records.push({ body, messageId: record.messageId });
     } catch (error) {
+      console.error("Error parsing record:", error);
       batchItemFailures.push({ itemIdentifier: record.messageId });
     }
   }
@@ -36,6 +38,7 @@ export async function handler(event: SQSEvent) {
   }
 
   try {
+    console.log(`deleting ${records.length} objects`);
     const response = await s3Client.send(
       new DeleteObjectsCommand({
         Bucket: bucketName,
@@ -59,10 +62,15 @@ export async function handler(event: SQSEvent) {
       }
     }
   } catch (error) {
+    console.error("Error deleting objects:", error);
     for (const record of records) {
       batchItemFailures.push({ itemIdentifier: record.messageId });
     }
   }
+
+  console.log(
+    `Deleted ${records.length - batchItemFailures.length} objects, ${batchItemFailures.length} failed`,
+  );
 
   return {
     batchItemFailures,
