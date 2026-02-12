@@ -42,22 +42,22 @@ class TempInfraConstruct extends Construct {
   public readonly removeDeletedFilesLambda: NodejsFunction;
 
   private readonly applicationUser: User;
-  private readonly webhookApiKeySecret: Secret;
+  private readonly webhookSignatureSecret: Secret;
 
   constructor(scope: Construct, id: string, props: TempConstructProps) {
     super(scope, id);
 
     this.applicationUser = new User(this, "applicationUser");
 
-    this.webhookApiKeySecret = new Secret(this, "webhookApiKeySecret", {
+    this.webhookSignatureSecret = new Secret(this, "webhookSignatureSecret", {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       description: "Secret for webhook authentication",
       generateSecretString: {
         passwordLength: 32,
         includeSpace: false,
-        generateStringKey: "apiKey",
+        generateStringKey: "signature",
         secretStringTemplate: JSON.stringify({
-          apiKey: "",
+          signature: "",
         }),
       },
     });
@@ -203,7 +203,7 @@ class TempInfraConstruct extends Construct {
         timeout: cdk.Duration.minutes(2.5),
         ephemeralStorageSize: cdk.Size.gibibytes(2),
         environment: {
-          WEBHOOK_SECRET_ARN: this.webhookApiKeySecret.secretArn,
+          WEBHOOK_SECRET_ARN: this.webhookSignatureSecret.secretArn,
         },
         logGroup: new LogGroup(this, "validateUploadedFilesLambdaLogGroup", {
           retention: RetentionDays.FIVE_DAYS,
@@ -224,7 +224,7 @@ class TempInfraConstruct extends Construct {
         retryAttempts: 2,
         timeout: cdk.Duration.minutes(1),
         environment: {
-          WEBHOOK_SECRET_ARN: this.webhookApiKeySecret.secretArn,
+          WEBHOOK_SECRET_ARN: this.webhookSignatureSecret.secretArn,
         },
         logGroup: new LogGroup(this, "removeDeletedFilesLambdaLogGroup", {
           retention: RetentionDays.FIVE_DAYS,
@@ -282,8 +282,8 @@ class TempInfraConstruct extends Construct {
 
     this.userRequestedDeleteQueue.grantSendMessages(this.applicationUser);
 
-    this.webhookApiKeySecret.grantRead(this.removeDeletedFilesLambda);
-    this.webhookApiKeySecret.grantRead(this.validateUploadedFilesLambda);
+    this.webhookSignatureSecret.grantRead(this.removeDeletedFilesLambda);
+    this.webhookSignatureSecret.grantRead(this.validateUploadedFilesLambda);
 
     //observability stuff
     const notificationTopic = new Topic(this, "notificationTopic", {

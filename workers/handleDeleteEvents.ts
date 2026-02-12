@@ -20,7 +20,6 @@ async function sendBatchWithRetry(
         Id: uuid(),
         MessageBody: JSON.stringify({
           key,
-          eventType: EventType.OBJECT_REMOVED_DELETE,
         }),
       })),
     });

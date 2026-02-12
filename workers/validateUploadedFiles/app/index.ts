@@ -52,13 +52,13 @@ export const handler = async (
   }
 
   const parsedSecretsString = JSON.parse(secret.SecretString) as {
-    apiKey: string;
+    signature: string;
   };
 
   for (const record of event.Records) {
     const body = JSON.parse(record.body) as PutFileRecord;
 
-    const result = await processRecord(body, parsedSecretsString.apiKey);
+    const result = await processRecord(body, parsedSecretsString.signature);
 
     if (!result.success) {
       batchItemFailures.push({ itemIdentifier: record.messageId });
@@ -72,7 +72,7 @@ export const handler = async (
 
 async function processRecord(
   record: PutFileRecord,
-  apiKey: string,
+  signature: string,
 ): Promise<FnResult<ScanResult>> {
   const bucket = record.bucket;
   const key = decodeURIComponent(record.key.replace(/\+/g, " "));
@@ -94,18 +94,20 @@ async function processRecord(
 
     console.log("Scan result:", scanResult);
 
-    // FIXME: send the status to the API
+    // FIXME: use correct api
     const response = await fetch(
-      "https://api-temp.545plea.xyz/api/v1/webhook/file-events",
+      "https://dev-api-temp.545plea.xyz/api/v1/webhooks/files",
       {
         method: "POST",
         body: JSON.stringify({
-          fileName: key,
-          eventType: "file:uploaded",
-          status: scanResult.infected,
+          type: "file:validated",
+          data: {
+            key,
+            safe: scanResult.infected ? false : true,
+          },
         }),
         headers: {
-          "x-api-key": apiKey,
+          "x-signature": signature,
           "Content-Type": "application/json",
         },
       },

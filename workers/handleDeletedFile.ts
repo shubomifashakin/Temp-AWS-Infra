@@ -12,7 +12,6 @@ const secretsManagerClient = new SecretsManagerClient({ region: awsRegion });
 export async function handler(event: SQSEvent) {
   const keys = event.Records.map((record) => JSON.parse(record.body)) as {
     key: string;
-    eventType: string;
   }[];
 
   const secret = await secretsManagerClient.send(
@@ -25,21 +24,21 @@ export async function handler(event: SQSEvent) {
     throw new Error("Secret string is empty");
   }
 
-  const { apiKey } = JSON.parse(secret.SecretString) as {
-    apiKey: string;
+  const { signature } = JSON.parse(secret.SecretString) as {
+    signature: string;
   };
 
-  //FIXME: make a delete call to our webhook
+  //FIXME: use corrrect webhook endpoint
   const response = await fetch(
-    "https://api-temp.545plea.xyz/api/v1/webhook/file-events",
+    "https://dev-api-temp.545plea.xyz/api/v1/webhooks/files",
     {
       method: "POST",
       body: JSON.stringify({
-        data: keys,
-        eventType: "file:deleted",
+        data: { keys: keys.map((key) => key.key), deleted_at: new Date() },
+        type: "file:deleted",
       }),
       headers: {
-        "x-api-key": apiKey,
+        "x-signature": signature,
         "Content-Type": "application/json",
       },
     },
