@@ -9,8 +9,7 @@ const s3Client = new S3Client({
 });
 
 type MessageBody = {
-  userId: string;
-  fileId: string;
+  s3Key: string;
 };
 
 export async function handler(event: SQSEvent) {
@@ -44,7 +43,7 @@ export async function handler(event: SQSEvent) {
         Bucket: bucketName,
         Delete: {
           Objects: records.map((c) => {
-            return { Key: c.body.fileId };
+            return { Key: c.body.s3Key };
           }),
         },
       }),
@@ -53,7 +52,7 @@ export async function handler(event: SQSEvent) {
     if (response.Errors?.length) {
       for (const error of response.Errors) {
         const failedRecord = records.find(
-          (record) => record.body.fileId === error.Key,
+          (record) => record.body.s3Key === error.Key,
         );
 
         if (failedRecord) {
