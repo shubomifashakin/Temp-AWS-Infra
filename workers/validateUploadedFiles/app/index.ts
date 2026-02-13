@@ -103,7 +103,7 @@ async function processRecord(
           type: "file:validated",
           data: {
             key,
-            safe: scanResult.infected ? false : true,
+            infected: scanResult.infected,
           },
         }),
         headers: {
