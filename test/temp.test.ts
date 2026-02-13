@@ -102,8 +102,8 @@ describe("TempStack Infrastructure", () => {
         GenerateSecretString: {
           PasswordLength: 32,
           IncludeSpace: false,
-          GenerateStringKey: "apiKey",
-          SecretStringTemplate: '{"apiKey":""}',
+          GenerateStringKey: "signature",
+          SecretStringTemplate: '{"signature":""}',
         },
       });
     });
