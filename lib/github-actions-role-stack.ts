@@ -6,6 +6,7 @@ import {
   ManagedPolicy,
   PolicyStatement,
   Effect,
+  FederatedPrincipal,
 } from "aws-cdk-lib/aws-iam";
 import { CfnOutput } from "aws-cdk-lib/core";
 
@@ -31,14 +32,18 @@ export class GitHubActionsRoleStack extends cdk.Stack {
     this.role = new Role(this, "GitHubActionsDeployRole", {
       roleName: `github-actions-temp-deploy-role`,
       description: `Role for GitHub Actions to deploy temp infrastructure`,
-      assumedBy: new WebIdentityPrincipal(githubOidcProviderArn, {
-        StringEquals: {
-          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+      assumedBy: new FederatedPrincipal(
+        githubOidcProviderArn,
+        {
+          StringEquals: {
+            "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+          },
+          StringLike: {
+            "token.actions.githubusercontent.com:sub": `repo:${githubOrg}/${githubRepo}:*`,
+          },
         },
-        StringLike: {
-          "token.actions.githubusercontent.com:sub": `repo:${githubOrg}/${githubRepo}:*`,
-        },
-      }),
+        "sts:AssumeRoleWithWebIdentity",
+      ),
       maxSessionDuration: cdk.Duration.hours(1),
     });
 
@@ -51,9 +56,7 @@ export class GitHubActionsRoleStack extends cdk.Stack {
         effect: Effect.ALLOW,
         actions: [
           "s3:*",
-
           "lambda:*",
-
           "iam:GetRole",
           "iam:PassRole",
           "iam:CreateRole",
@@ -65,18 +68,14 @@ export class GitHubActionsRoleStack extends cdk.Stack {
           "iam:GetRolePolicy",
           "iam:TagRole",
           "iam:UntagRole",
-
+          "iam:UpdateRole",
+          "iam:UpdateAssumeRolePolicy",
           "sqs:*",
-
           "sns:*",
-
           "secretsmanager:*",
-
           "cloudwatch:*",
           "logs:*",
-
           "ecr:*",
-
           "ssm:GetParameter",
           "ssm:PutParameter",
         ],
@@ -92,8 +91,15 @@ export class GitHubActionsRoleStack extends cdk.Stack {
           "iam:DeleteUser",
           "iam:GetUser",
           "iam:TagUser",
+          "iam:ListAttachedUserPolicies",
+          "iam:AttachUserPolicy",
+          "iam:DetachUserPolicy",
+          "iam:PutUserPolicy",
+          "iam:DeleteUserPolicy",
         ],
-        resources: [`arn:aws:iam::${this.account}:user/temp-application-user`],
+        resources: [
+          `arn:aws:iam::${this.account}:user/TempStack-*applicationUser*`,
+        ],
       }),
     );
 
