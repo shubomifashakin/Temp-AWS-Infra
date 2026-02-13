@@ -1,0 +1,82 @@
+name: Deploy Stack
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        default: "development"
+        type: choice
+        options:
+          - development
+          - production
+  push:
+    paths:
+      - "bin/**"
+      - "package*.json"
+      - "workers/**"
+      - "lib/**"
+      - "cdk.json"
+      - "tsconfig.json"
+      - ".github/workflows/deploy.yml"
+
+    branches:
+      - main
+      - dev
+
+jobs:
+  deploy:
+    permissions:
+      id-token: write
+      contents: read
+
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'development') }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v6.0.0
+        with:
+          aws-region: ${{ vars.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_IAM_ROLE_ARN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6.2.0
+        with:
+          node-version: "24"
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run unit tests
+        run: npm test
+        env:
+          NOTIFICATION_EMAIL: ${{ secrets.NOTIFICATION_EMAIL }}
+          GITHUB_ORG: ${{ github.repository_owner }}
+          GITHUB_REPO: ${{ github.event.repository.name }}
+
+      - name: Synthesize CDK App
+        run: npx cdk synth
+        env:
+          NOTIFICATION_EMAIL: ${{ secrets.NOTIFICATION_EMAIL }}
+          GITHUB_ORG: ${{ github.repository_owner }}
+          GITHUB_REPO: ${{ github.event.repository.name }}
+
+      - name: CDK Diff
+        run: npx cdk diff
+        env:
+          NOTIFICATION_EMAIL: ${{ secrets.NOTIFICATION_EMAIL }}
+          GITHUB_ORG: ${{ github.repository_owner }}
+          GITHUB_REPO: ${{ github.event.repository.name }}
+
+      - name: Deploy Temp Stack
+        run: npx cdk deploy TempStack --require-approval never
+        env:
+          NOTIFICATION_EMAIL: ${{ secrets.NOTIFICATION_EMAIL }}
+          GITHUB_ORG: ${{ github.repository_owner }}
+          GITHUB_REPO: ${{ github.event.repository.name }}
