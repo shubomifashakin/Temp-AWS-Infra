@@ -40,6 +40,12 @@ class TempInfraConstruct extends Construct {
   public readonly deleteEventsLambda: NodejsFunction;
   public readonly validateUploadedFilesLambda: NodejsFunction;
   public readonly removeDeletedFilesLambda: NodejsFunction;
+  public readonly notificationTopic: Topic;
+  public readonly lambdaProcessingTimeAlarm: Alarm;
+  public readonly putDlqAlarm: Alarm;
+  public readonly deleteDlqAlarm: Alarm;
+  public readonly putQueueDepthAlarm: Alarm;
+  public readonly deleteQueueDepthAlarm: Alarm;
 
   private readonly applicationUser: User;
   private readonly webhookSignatureSecret: Secret;
@@ -286,16 +292,16 @@ class TempInfraConstruct extends Construct {
     this.webhookSignatureSecret.grantRead(this.validateUploadedFilesLambda);
 
     //observability stuff
-    const notificationTopic = new Topic(this, "notificationTopic", {
+    this.notificationTopic = new Topic(this, "notificationTopic", {
       enforceSSL: true,
       displayName: "File Processing Service Alerts",
     });
 
-    notificationTopic.addSubscription(
+    this.notificationTopic.addSubscription(
       new EmailSubscription(props.notificationEmail),
     );
 
-    const lambdaProcessingTimeAlarm = new Alarm(
+    this.lambdaProcessingTimeAlarm = new Alarm(
       this,
       "lambdaProcessingTimeAlarm",
       {
@@ -310,7 +316,7 @@ class TempInfraConstruct extends Construct {
       },
     );
 
-    const putDlqAlarm = new Alarm(this, "putDlqAlarm", {
+    this.putDlqAlarm = new Alarm(this, "putDlqAlarm", {
       threshold: 2,
       evaluationPeriods: 1,
       treatMissingData: TreatMissingData.IGNORE,
@@ -319,7 +325,7 @@ class TempInfraConstruct extends Construct {
       alarmDescription: "There are more than 2 messages in the put sqs dlq",
     });
 
-    const deleteDlqAlarm = new Alarm(this, "deleteDlqAlarm", {
+    this.deleteDlqAlarm = new Alarm(this, "deleteDlqAlarm", {
       threshold: 2,
       evaluationPeriods: 1,
       treatMissingData: TreatMissingData.IGNORE,
@@ -328,7 +334,7 @@ class TempInfraConstruct extends Construct {
       alarmDescription: "There are more than 2 messages in the delete sqs dlq",
     });
 
-    const putQueueDepthAlarm = new Alarm(this, "putQueueDepthAlarm", {
+    this.putQueueDepthAlarm = new Alarm(this, "putQueueDepthAlarm", {
       threshold: 20,
       evaluationPeriods: 1,
       metric: this.putEventsSqsQueue.metricApproximateNumberOfMessagesVisible({
@@ -340,7 +346,7 @@ class TempInfraConstruct extends Construct {
         "Put queue has too many messages, processing is too slow",
     });
 
-    const deleteQueueDepthAlarm = new Alarm(this, "deleteQueueDepthAlarm", {
+    this.deleteQueueDepthAlarm = new Alarm(this, "deleteQueueDepthAlarm", {
       threshold: 20,
       evaluationPeriods: 1,
       metric:
@@ -354,13 +360,13 @@ class TempInfraConstruct extends Construct {
     });
 
     [
-      putDlqAlarm,
-      deleteDlqAlarm,
-      lambdaProcessingTimeAlarm,
-      putQueueDepthAlarm,
-      deleteQueueDepthAlarm,
+      this.putDlqAlarm,
+      this.deleteDlqAlarm,
+      this.lambdaProcessingTimeAlarm,
+      this.putQueueDepthAlarm,
+      this.deleteQueueDepthAlarm,
     ].forEach((alarm) =>
-      alarm.addAlarmAction(new SnsAction(notificationTopic)),
+      alarm.addAlarmAction(new SnsAction(this.notificationTopic)),
     );
 
     new CfnOutput(this, "applicationUsername", {
