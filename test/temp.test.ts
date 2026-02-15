@@ -18,9 +18,9 @@ describe("TempStack Infrastructure", () => {
       template.resourceCountIs("AWS::IAM::User", 1);
       template.resourceCountIs("AWS::SecretsManager::Secret", 1);
       template.resourceCountIs("AWS::S3::Bucket", 1);
-      template.resourceCountIs("AWS::SQS::Queue", 5);
+      template.resourceCountIs("AWS::SQS::Queue", 6);
       template.resourceCountIs("AWS::SNS::Topic", 1);
-      template.resourceCountIs("AWS::Lambda::Function", 6);
+      template.resourceCountIs("AWS::Lambda::Function", 7);
       template.resourceCountIs("AWS::CloudWatch::Alarm", 5);
     });
   });

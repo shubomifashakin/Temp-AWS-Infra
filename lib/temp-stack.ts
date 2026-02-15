@@ -30,11 +30,13 @@ interface TempConstructProps {
 
 class TempInfraConstruct extends Construct {
   public readonly s3Bucket: Bucket;
+  public readonly infectedFilesQueue: Queue;
   public readonly userRequestedDeleteQueue: Queue;
   public readonly putEventsSqsQueue: Queue;
   public readonly putSqsDlq: Queue;
   public readonly deleteEventsSqsQueue: Queue;
   public readonly deleteSqsDlq: Queue;
+  public readonly infectedFilesDeleteLambda: NodejsFunction;
   public readonly userRequestedDeleteLambda: NodejsFunction;
   public readonly putEventsLambda: NodejsFunction;
   public readonly deleteEventsLambda: NodejsFunction;
@@ -94,6 +96,13 @@ class TempInfraConstruct extends Construct {
       ],
     });
 
+    this.infectedFilesQueue = new Queue(this, "infectedFilesQueue", {
+      enforceSSL: true,
+      visibilityTimeout: cdk.Duration.minutes(3),
+      retentionPeriod: cdk.Duration.minutes(10),
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
     this.userRequestedDeleteQueue = new Queue(
       this,
       "userRequestedDeleteQueue",
@@ -138,6 +147,27 @@ class TempInfraConstruct extends Construct {
         queue: this.deleteSqsDlq,
       },
     });
+
+    this.infectedFilesDeleteLambda = new NodejsFunction(
+      this,
+      "infectedFilesDeleteLambda",
+      {
+        runtime: Runtime.NODEJS_24_X,
+        description:
+          "This is responsible for deleting infected files from the s3 bucket.",
+        memorySize: 256,
+        timeout: cdk.Duration.minutes(1.5),
+        handler: "index.handler",
+        entry: "./workers/handleInfectedFilesLambda.ts",
+        retryAttempts: 2,
+        environment: {
+          BUCKET_NAME: this.s3Bucket.bucketName,
+        },
+        logGroup: new LogGroup(this, "infectedFilesDeleteLambdaGroup", {
+          retention: RetentionDays.FIVE_DAYS,
+        }),
+      },
+    );
 
     this.userRequestedDeleteLambda = new NodejsFunction(
       this,
@@ -210,6 +240,7 @@ class TempInfraConstruct extends Construct {
         ephemeralStorageSize: cdk.Size.gibibytes(2),
         environment: {
           WEBHOOK_SECRET_ARN: this.webhookSignatureSecret.secretArn,
+          INFECTED_QUEUE_URL: this.infectedFilesQueue.queueUrl,
         },
         logGroup: new LogGroup(this, "validateUploadedFilesLambdaLogGroup", {
           retention: RetentionDays.FIVE_DAYS,
@@ -246,6 +277,14 @@ class TempInfraConstruct extends Construct {
       }),
     );
 
+    this.infectedFilesDeleteLambda.addEventSource(
+      new SqsEventSource(this.infectedFilesQueue, {
+        batchSize: 5,
+        reportBatchItemFailures: true,
+        maxBatchingWindow: cdk.Duration.seconds(30),
+      }),
+    );
+
     this.validateUploadedFilesLambda.addEventSource(
       new SqsEventSource(this.putEventsSqsQueue, {
         batchSize: 5,
@@ -263,6 +302,7 @@ class TempInfraConstruct extends Construct {
 
     this.putEventsSqsQueue.grantSendMessages(this.putEventsLambda);
     this.deleteEventsSqsQueue.grantSendMessages(this.deleteEventsLambda);
+    this.infectedFilesQueue.grantSendMessages(this.validateUploadedFilesLambda);
 
     this.putEventsSqsQueue.grantConsumeMessages(
       this.validateUploadedFilesLambda,
@@ -285,6 +325,7 @@ class TempInfraConstruct extends Construct {
     this.s3Bucket.grantRead(this.applicationUser);
     this.s3Bucket.grantRead(this.validateUploadedFilesLambda);
     this.s3Bucket.grantDelete(this.userRequestedDeleteLambda);
+    this.s3Bucket.grantDelete(this.infectedFilesDeleteLambda);
 
     this.userRequestedDeleteQueue.grantSendMessages(this.applicationUser);
 

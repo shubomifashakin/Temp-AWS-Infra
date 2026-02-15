@@ -1,3 +1,8 @@
+import { unlink } from "fs/promises";
+import { spawn } from "child_process";
+import { createWriteStream } from "fs";
+import { pipeline } from "stream/promises";
+
 import { SQSEvent } from "aws-lambda";
 
 import {
@@ -6,10 +11,7 @@ import {
 } from "@aws-sdk/client-secrets-manager";
 
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
-import { spawn } from "child_process";
-import { createWriteStream, unlinkSync } from "fs";
-import { unlink } from "fs/promises";
-import { pipeline } from "stream/promises";
+import { SendMessageCommand, SQSClient } from "@aws-sdk/client-sqs";
 
 export interface PutFileRecord {
   key: string;
@@ -19,10 +21,13 @@ export interface PutFileRecord {
 
 const awsRegion = process.env.AWS_REGION;
 const webhookSecretArn = process.env.WEBHOOK_SECRET_ARN!;
+const infectedQueueUrl = process.env.INFECTED_QUEUE_URL!;
 
 const secretsManagerClient = new SecretsManagerClient({ region: awsRegion });
 
 const s3Client = new S3Client({ region: awsRegion });
+const sqsClient = new SQSClient({ region: awsRegion });
+
 const CLAMAV_DB_PATH = "/var/lib/clamav";
 
 interface ScanResult {
@@ -93,6 +98,21 @@ async function processRecord(
     const scanResult = await scanFile(localPath);
 
     console.log("Scan result:", scanResult);
+
+    if (scanResult.infected) {
+      console.log("Queuing infected file for removal");
+
+      const sendMessage = new SendMessageCommand({
+        QueueUrl: infectedQueueUrl,
+        MessageBody: JSON.stringify({
+          s3Key: key,
+        }),
+      });
+
+      await sqsClient.send(sendMessage);
+
+      console.log("infected file queued for removal");
+    }
 
     // FIXME: use correct api
     const response = await fetch(
