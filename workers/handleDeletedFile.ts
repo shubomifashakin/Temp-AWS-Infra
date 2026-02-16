@@ -34,7 +34,7 @@ export async function handler(event: SQSEvent) {
     {
       method: "POST",
       body: JSON.stringify({
-        data: { keys: keys.map((key) => key.key), deleted_at: new Date() },
+        data: { keys: keys.map((key) => key.key), deletedAt: new Date() },
         type: "file:deleted",
       }),
       headers: {
