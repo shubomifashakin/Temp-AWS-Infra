@@ -13,12 +13,6 @@ import {
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { SendMessageCommand, SQSClient } from "@aws-sdk/client-sqs";
 
-export interface PutFileRecord {
-  key: string;
-  bucket: string;
-  eventType: string;
-}
-
 const awsRegion = process.env.AWS_REGION;
 const webhookSecretArn = process.env.WEBHOOK_SECRET_ARN!;
 const infectedQueueUrl = process.env.INFECTED_QUEUE_URL!;
@@ -38,6 +32,52 @@ interface ScanResult {
 type FnResult<T> =
   | { success: true; data: T; error: null }
   | { success: false; data: null; error: Error };
+
+type S3EventRecord = {
+  eventVersion: string;
+  eventSource: string;
+  awsRegion: string;
+  eventTime: string;
+  eventName: string;
+  userIdentity: {
+    principalId: string;
+  };
+  requestParameters: {
+    sourceIPAddress: string;
+  };
+  responseElements: {
+    "x-amz-request-id": string;
+    "x-amz-id-2": string;
+  };
+  s3: {
+    s3SchemaVersion: string;
+    configurationId: string;
+    bucket: {
+      name: string;
+      ownerIdentity: {
+        principalId: string;
+      };
+      arn: string;
+    };
+    object: {
+      key: string;
+      size: number;
+      eTag: string;
+      versionId?: string;
+      sequencer: string;
+    };
+  };
+  glacierEventData?: {
+    restoreEventData: {
+      lifecycleRestorationExpiryTime: string;
+      lifecycleRestoreStorageClass: string;
+    };
+  };
+};
+
+type S3EventNotification = {
+  Records: S3EventRecord[];
+};
 
 export const handler = async (
   event: SQSEvent,
@@ -61,12 +101,17 @@ export const handler = async (
   };
 
   for (const record of event.Records) {
-    const body = JSON.parse(record.body) as PutFileRecord;
+    const body = JSON.parse(record.body) as S3EventNotification;
 
-    const result = await processRecord(body, parsedSecretsString.signature);
+    for (const s3Record of body.Records) {
+      const result = await processRecord(
+        s3Record,
+        parsedSecretsString.signature,
+      );
 
-    if (!result.success) {
-      batchItemFailures.push({ itemIdentifier: record.messageId });
+      if (!result.success) {
+        batchItemFailures.push({ itemIdentifier: record.messageId });
+      }
     }
   }
 
@@ -76,11 +121,11 @@ export const handler = async (
 };
 
 async function processRecord(
-  record: PutFileRecord,
+  record: S3EventRecord,
   signature: string,
 ): Promise<FnResult<ScanResult>> {
-  const bucket = record.bucket;
-  const key = decodeURIComponent(record.key.replace(/\+/g, " "));
+  const bucket = record.s3.bucket.name;
+  const key = decodeURIComponent(record.s3.object.key.replace(/\+/g, " "));
 
   console.log(`Scanning ${bucket}/${key}`);
 

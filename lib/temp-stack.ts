@@ -8,7 +8,7 @@ import {
   DockerImageCode,
   DockerImageFunction,
 } from "aws-cdk-lib/aws-lambda";
-import { LambdaDestination } from "aws-cdk-lib/aws-s3-notifications";
+import { SqsDestination } from "aws-cdk-lib/aws-s3-notifications";
 import { SqsEventSource } from "aws-cdk-lib/aws-lambda-event-sources";
 import { Topic } from "aws-cdk-lib/aws-sns";
 import {
@@ -38,8 +38,6 @@ class TempInfraConstruct extends Construct {
   public readonly deleteSqsDlq: Queue;
   public readonly infectedFilesDeleteLambda: NodejsFunction;
   public readonly userRequestedDeleteLambda: NodejsFunction;
-  public readonly putEventsLambda: NodejsFunction;
-  public readonly deleteEventsLambda: NodejsFunction;
   public readonly validateUploadedFilesLambda: NodejsFunction;
   public readonly removeDeletedFilesLambda: NodejsFunction;
   public readonly notificationTopic: Topic;
@@ -190,40 +188,6 @@ class TempInfraConstruct extends Construct {
       },
     );
 
-    this.putEventsLambda = new NodejsFunction(this, "putEventsLambda", {
-      runtime: Runtime.NODEJS_24_X,
-      description:
-        "This is responsible for receiving s3 put events and pushing it to the put sqs queue",
-      memorySize: 256,
-      timeout: cdk.Duration.seconds(30),
-      handler: "index.handler",
-      entry: "./workers/handlePutEvents.ts",
-      retryAttempts: 2,
-      environment: {
-        SQS_QUEUE_URL: this.putEventsSqsQueue.queueUrl,
-      },
-      logGroup: new LogGroup(this, "putEventsLambdaLogGroup", {
-        retention: RetentionDays.FIVE_DAYS,
-      }),
-    });
-
-    this.deleteEventsLambda = new NodejsFunction(this, "deleteEventsLambda", {
-      runtime: Runtime.NODEJS_24_X,
-      description:
-        "This is responsible for receiving s3 delete events and pushing it to the delete sqs queue",
-      memorySize: 256,
-      timeout: cdk.Duration.seconds(30),
-      retryAttempts: 2,
-      handler: "index.handler",
-      entry: "./workers/handleDeleteEvents.ts",
-      environment: {
-        SQS_QUEUE_URL: this.deleteEventsSqsQueue.queueUrl,
-      },
-      logGroup: new LogGroup(this, "deleteEventsLambdaLogGroup", {
-        retention: RetentionDays.FIVE_DAYS,
-      }),
-    });
-
     this.validateUploadedFilesLambda = new DockerImageFunction(
       this,
       "validateUploadedFilesLambda",
@@ -287,7 +251,7 @@ class TempInfraConstruct extends Construct {
 
     this.validateUploadedFilesLambda.addEventSource(
       new SqsEventSource(this.putEventsSqsQueue, {
-        batchSize: 5,
+        batchSize: 2,
         reportBatchItemFailures: true,
         maxBatchingWindow: cdk.Duration.seconds(30),
       }),
@@ -300,8 +264,6 @@ class TempInfraConstruct extends Construct {
       }),
     );
 
-    this.putEventsSqsQueue.grantSendMessages(this.putEventsLambda);
-    this.deleteEventsSqsQueue.grantSendMessages(this.deleteEventsLambda);
     this.infectedFilesQueue.grantSendMessages(this.validateUploadedFilesLambda);
 
     this.putEventsSqsQueue.grantConsumeMessages(
@@ -313,12 +275,12 @@ class TempInfraConstruct extends Construct {
 
     this.s3Bucket.addEventNotification(
       EventType.OBJECT_CREATED_PUT,
-      new LambdaDestination(this.putEventsLambda),
+      new SqsDestination(this.putEventsSqsQueue),
     );
 
     this.s3Bucket.addEventNotification(
       EventType.LIFECYCLE_EXPIRATION_DELETE,
-      new LambdaDestination(this.deleteEventsLambda),
+      new SqsDestination(this.deleteEventsSqsQueue),
     );
 
     this.s3Bucket.grantPut(this.applicationUser);
