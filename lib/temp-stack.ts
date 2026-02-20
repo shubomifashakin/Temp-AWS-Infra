@@ -38,7 +38,7 @@ class TempInfraConstruct extends Construct {
   public readonly deleteSqsDlq: Queue;
   public readonly infectedFilesDeleteLambda: NodejsFunction;
   public readonly userRequestedDeleteLambda: NodejsFunction;
-  public readonly validateUploadedFilesLambda: NodejsFunction;
+  public readonly validateUploadedFilesLambda: DockerImageFunction;
   public readonly removeDeletedFilesLambda: NodejsFunction;
   public readonly notificationTopic: Topic;
   public readonly lambdaProcessingTimeAlarm: Alarm;

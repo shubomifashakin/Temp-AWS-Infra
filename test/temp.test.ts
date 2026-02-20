@@ -20,7 +20,7 @@ describe("TempStack Infrastructure", () => {
       template.resourceCountIs("AWS::S3::Bucket", 1);
       template.resourceCountIs("AWS::SQS::Queue", 6);
       template.resourceCountIs("AWS::SNS::Topic", 1);
-      template.resourceCountIs("AWS::Lambda::Function", 7);
+      template.resourceCountIs("AWS::Lambda::Function", 5);
       template.resourceCountIs("AWS::CloudWatch::Alarm", 5);
     });
   });
@@ -110,40 +110,6 @@ describe("TempStack Infrastructure", () => {
   });
 
   describe("Lambda Functions", () => {
-    test("putEventsLambda has correct configuration", () => {
-      template.hasResourceProperties("AWS::Lambda::Function", {
-        Runtime: "nodejs24.x",
-        Handler: "index.handler",
-        MemorySize: 256,
-        Timeout: 30,
-        Description: Match.stringLikeRegexp(".*put events.*"),
-        Environment: {
-          Variables: {
-            SQS_QUEUE_URL: {
-              Ref: Match.anyValue(),
-            },
-          },
-        },
-      });
-    });
-
-    test("deleteEventsLambda has correct configuration", () => {
-      template.hasResourceProperties("AWS::Lambda::Function", {
-        Runtime: "nodejs24.x",
-        Handler: "index.handler",
-        MemorySize: 256,
-        Timeout: 30,
-        Description: Match.stringLikeRegexp(".*delete events.*"),
-        Environment: {
-          Variables: {
-            SQS_QUEUE_URL: {
-              Ref: Match.anyValue(),
-            },
-          },
-        },
-      });
-    });
-
     test("validateUploadedFilesLambda has correct configuration", () => {
       template.hasResourceProperties("AWS::Lambda::Function", {
         MemorySize: 2560,
@@ -177,28 +143,6 @@ describe("TempStack Infrastructure", () => {
   });
 
   describe("SQS Queues", () => {
-    test("putEventsSqsQueue has correct configuration", () => {
-      template.hasResourceProperties("AWS::SQS::Queue", {
-        MessageRetentionPeriod: 600,
-        VisibilityTimeout: 180,
-        RedrivePolicy: {
-          maxReceiveCount: 3,
-          deadLetterTargetArn: Match.anyValue(),
-        },
-      });
-    });
-
-    test("deleteEventsSqsQueue has correct configuration", () => {
-      template.hasResourceProperties("AWS::SQS::Queue", {
-        MessageRetentionPeriod: 600,
-        VisibilityTimeout: 90,
-        RedrivePolicy: {
-          maxReceiveCount: 3,
-          deadLetterTargetArn: Match.anyValue(),
-        },
-      });
-    });
-
     test("Dead Letter Queues have correct configuration", () => {
       template.hasResourceProperties("AWS::SQS::Queue", {
         MessageRetentionPeriod: 604800,
@@ -327,10 +271,18 @@ describe("TempStack Infrastructure", () => {
   });
 
   describe("S3 Event Notifications", () => {
-    test("S3 bucket has Lambda notifications configured", () => {
-      template.hasResourceProperties("AWS::Lambda::Permission", {
-        Action: "lambda:InvokeFunction",
-        Principal: "s3.amazonaws.com",
+    test("S3 bucket has PUT and DELETE event notifications", () => {
+      template.hasResourceProperties("Custom::S3BucketNotifications", {
+        NotificationConfiguration: {
+          QueueConfigurations: Match.arrayWith([
+            Match.objectLike({
+              Events: Match.arrayWith(["s3:ObjectCreated:Put"]),
+            }),
+            Match.objectLike({
+              Events: Match.arrayWith(["s3:LifecycleExpiration:Delete"]),
+            }),
+          ]),
+        },
       });
     });
   });
