@@ -88,7 +88,7 @@ export async function handler(event: SQSEvent) {
       body: JSON.stringify({
         data: {
           keys: keys,
-          deleted_at: new Date(),
+          deletedAt: new Date(),
         },
         type: "file:deleted",
       }),
