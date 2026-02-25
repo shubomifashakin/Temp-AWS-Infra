@@ -73,11 +73,6 @@ class TempInfraConstruct extends Construct {
       lifecycleRules: [
         {
           enabled: true,
-          tagFilters: { lifetime: "immediate" },
-          expiration: cdk.Duration.days(1), //FIXME: THIS IS ONLY FOR TESTING, DONT FORGET TO REMOVE THIS
-        },
-        {
-          enabled: true,
           tagFilters: { lifetime: "short" },
           expiration: cdk.Duration.days(7),
         },
@@ -321,18 +316,26 @@ class TempInfraConstruct extends Construct {
 
     this.putDlqAlarm = new Alarm(this, "putDlqAlarm", {
       threshold: 2,
-      evaluationPeriods: 1,
+      evaluationPeriods: 2,
       treatMissingData: TreatMissingData.IGNORE,
-      metric: this.putSqsDlq.metricApproximateNumberOfMessagesVisible(),
+      metric: this.putSqsDlq.metricApproximateNumberOfMessagesVisible({
+        period: cdk.Duration.minutes(2),
+        statistic: Stats.MAXIMUM,
+        visible: true,
+      }),
       comparisonOperator: ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
       alarmDescription: "There are more than 2 messages in the put sqs dlq",
     });
 
     this.deleteDlqAlarm = new Alarm(this, "deleteDlqAlarm", {
       threshold: 2,
-      evaluationPeriods: 1,
+      evaluationPeriods: 2,
       treatMissingData: TreatMissingData.IGNORE,
-      metric: this.deleteSqsDlq.metricApproximateNumberOfMessagesVisible(),
+      metric: this.deleteSqsDlq.metricApproximateNumberOfMessagesVisible({
+        period: cdk.Duration.minutes(2),
+        statistic: Stats.MAXIMUM,
+        visible: true,
+      }),
       comparisonOperator: ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
       alarmDescription: "There are more than 2 messages in the delete sqs dlq",
     });
