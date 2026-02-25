@@ -32,16 +32,6 @@ describe("TempStack Infrastructure", () => {
           Rules: [
             {
               Status: "Enabled",
-              ExpirationInDays: 1,
-              TagFilters: [
-                {
-                  Key: "lifetime",
-                  Value: "immediate",
-                },
-              ],
-            },
-            {
-              Status: "Enabled",
               ExpirationInDays: 7,
               TagFilters: [
                 {
@@ -164,7 +154,7 @@ describe("TempStack Infrastructure", () => {
     test("putDlqAlarm is configured correctly", () => {
       template.hasResourceProperties("AWS::CloudWatch::Alarm", {
         Threshold: 2,
-        EvaluationPeriods: 1,
+        EvaluationPeriods: 2,
         ComparisonOperator: "GreaterThanOrEqualToThreshold",
         AlarmDescription: "There are more than 2 messages in the put sqs dlq",
         TreatMissingData: "ignore",
@@ -174,7 +164,7 @@ describe("TempStack Infrastructure", () => {
     test("deleteDlqAlarm is configured correctly", () => {
       template.hasResourceProperties("AWS::CloudWatch::Alarm", {
         Threshold: 2,
-        EvaluationPeriods: 1,
+        EvaluationPeriods: 2,
         ComparisonOperator: "GreaterThanOrEqualToThreshold",
         AlarmDescription:
           "There are more than 2 messages in the delete sqs dlq",
