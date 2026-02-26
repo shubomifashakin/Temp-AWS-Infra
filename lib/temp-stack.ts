@@ -397,7 +397,6 @@ class TempInfraConstruct extends Construct {
       alarm.addAlarmAction(new SnsAction(this.notificationTopic)),
     );
 
-    //FIXME: CLOUDFRONT STUFF START
     //used to verify signed urls/cookies
     const publicKey = new cloudfront.PublicKey(this, "AssetsPublicKey", {
       encodedKey: props.cloudfrontPublicKey,
@@ -438,8 +437,6 @@ class TempInfraConstruct extends Construct {
     new CfnOutput(this, "PublicKeyId", {
       value: publicKey.publicKeyId,
     });
-
-    //FIXME: ENDS HERE
 
     new CfnOutput(this, "applicationUsername", {
       value: this.applicationUser.userName,
