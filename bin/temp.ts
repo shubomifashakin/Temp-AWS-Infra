@@ -17,6 +17,7 @@ const domainName = process.env.CLOUDFRONT_DOMAIN_NAME;
 const cloudfrontDomainCertificateArn =
   process.env.CLOUDFRONT_DOMAIN_CERTIFICATE_ARN;
 const cloudfrontPublicKey = process.env.CLOUDFRONT_PUBLIC_KEY;
+const backendDomainUrl = process.env.BACKEND_DOMAIN_URL;
 
 if (!githubOrg || !githubRepo) {
   throw new Error("GITHUB_ORG or GITHUB_REPO environment variable must be set");
@@ -34,6 +35,10 @@ if (!cloudfrontDomainCertificateArn) {
   );
 }
 
+if (!backendDomainUrl) {
+  throw new Error("BACKEND_DOMAIN_URL environment variable must be set");
+}
+
 const app = new cdk.App();
 
 new GitHubActionsRoleStack(app, "GitHubActionsStack", {
@@ -46,4 +51,5 @@ new TempStack(app, "TempStack", {
   cloudfrontDomainName: domainName,
   cloudfrontPublicKey: cloudfrontPublicKey,
   cloudfrontDomainCertificateArn: cloudfrontDomainCertificateArn,
+  backendDomainUrl,
 });

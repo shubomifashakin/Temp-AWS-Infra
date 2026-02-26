@@ -9,6 +9,10 @@ describe("TempStack Infrastructure", () => {
     const app = new cdk.App();
     const stack = new Temp.TempStack(app, "MyTestStack", {
       notificationEmail: "testemail@gmail.com",
+      backendDomainUrl: "testdomain.com",
+      cloudfrontPublicKey: "testpublickey",
+      cloudfrontDomainName: "testdomain.com",
+      cloudfrontDomainCertificateArn: "testarn",
     });
     template = Template.fromStack(stack);
   });
@@ -266,7 +270,7 @@ describe("TempStack Infrastructure", () => {
         NotificationConfiguration: {
           QueueConfigurations: Match.arrayWith([
             Match.objectLike({
-              Events: Match.arrayWith(["s3:ObjectCreated:Put"]),
+              Events: Match.arrayWith(["s3:ObjectCreated:Post"]),
             }),
             Match.objectLike({
               Events: Match.arrayWith(["s3:LifecycleExpiration:Delete"]),

@@ -1,7 +1,12 @@
 import * as cdk from "aws-cdk-lib/core";
 import { Construct } from "constructs";
 import { Queue } from "aws-cdk-lib/aws-sqs";
-import { BlockPublicAccess, Bucket, EventType } from "aws-cdk-lib/aws-s3";
+import {
+  BlockPublicAccess,
+  Bucket,
+  EventType,
+  HttpMethods,
+} from "aws-cdk-lib/aws-s3";
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import {
   Runtime,
@@ -33,6 +38,7 @@ interface TempConstructProps {
   cloudfrontPublicKey: string;
   cloudfrontDomainName: string;
   cloudfrontDomainCertificateArn: string;
+  backendDomainUrl: string;
 }
 
 class TempInfraConstruct extends Construct {
@@ -78,6 +84,14 @@ class TempInfraConstruct extends Construct {
     this.s3Bucket = new Bucket(this, "tempS3Bucket", {
       enforceSSL: true,
       blockPublicAccess: BlockPublicAccess.BLOCK_ALL,
+      cors: [
+        {
+          allowedHeaders: ["*"],
+          exposedHeaders: ["ETag"],
+          allowedOrigins: [props.backendDomainUrl],
+          allowedMethods: [HttpMethods.POST, HttpMethods.PUT],
+        },
+      ],
       lifecycleRules: [
         {
           enabled: true,
@@ -277,7 +291,7 @@ class TempInfraConstruct extends Construct {
     );
 
     this.s3Bucket.addEventNotification(
-      EventType.OBJECT_CREATED_PUT,
+      EventType.OBJECT_CREATED_POST,
       new SqsDestination(this.putEventsSqsQueue),
     );
 
@@ -456,6 +470,7 @@ export class TempStack extends cdk.Stack {
     super(scope, id, props);
 
     new TempInfraConstruct(this, "TempInfraResources", {
+      backendDomainUrl: props.backendDomainUrl,
       notificationEmail: props.notificationEmail,
       cloudfrontPublicKey: props.cloudfrontPublicKey,
       cloudfrontDomainName: props.cloudfrontDomainName,
