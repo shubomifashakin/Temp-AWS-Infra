@@ -35,6 +35,14 @@ jobs:
     environment:
       name: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'development') }}
 
+    env:
+      NOTIFICATION_EMAIL: ${{ secrets.NOTIFICATION_EMAIL }}
+      GITHUB_ORG: ${{ github.repository_owner }}
+      GITHUB_REPO: ${{ github.event.repository.name }}
+      CLOUDFRONT_DOMAIN_NAME: ${{ secrets.CLOUDFRONT_DOMAIN_NAME }}
+      CLOUDFRONT_DOMAIN_CERTIFICATE_ARN: ${{ secrets.CLOUDFRONT_DOMAIN_CERTIFICATE_ARN }}
+      CLOUDFRONT_PUBLIC_KEY: ${{ secrets.CLOUDFRONT_PUBLIC_KEY }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -46,7 +54,7 @@ jobs:
           role-to-assume: ${{ secrets.AWS_IAM_ROLE_ARN }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6.2.0
+        uses: actions/setup-node@v6
         with:
           node-version: "24"
 
@@ -55,31 +63,15 @@ jobs:
 
       - name: Run unit tests
         run: npm test
-        env:
-          NOTIFICATION_EMAIL: ${{ secrets.NOTIFICATION_EMAIL }}
-          GITHUB_ORG: ${{ github.repository_owner }}
-          GITHUB_REPO: ${{ github.event.repository.name }}
 
       - name: Synthesize CDK App
         run: npx cdk synth
-        env:
-          NOTIFICATION_EMAIL: ${{ secrets.NOTIFICATION_EMAIL }}
-          GITHUB_ORG: ${{ github.repository_owner }}
-          GITHUB_REPO: ${{ github.event.repository.name }}
 
       - name: CDK Diff
         run: npx cdk diff
-        env:
-          NOTIFICATION_EMAIL: ${{ secrets.NOTIFICATION_EMAIL }}
-          GITHUB_ORG: ${{ github.repository_owner }}
-          GITHUB_REPO: ${{ github.event.repository.name }}
 
       - name: Deploy Temp Stack
         run: npx cdk deploy TempStack --require-approval never
-        env:
-          NOTIFICATION_EMAIL: ${{ secrets.NOTIFICATION_EMAIL }}
-          GITHUB_ORG: ${{ github.repository_owner }}
-          GITHUB_REPO: ${{ github.event.repository.name }}
 
   notify:
     name: Notify Discord
@@ -91,8 +83,8 @@ jobs:
         uses: sarisia/actions-status-discord@v1.16.0
         with:
           webhook: ${{ secrets.DISCORD_WEBHOOK }}
-          status: ${{ needs.deploy.result != 'failure' && 'success' || 'failure' }}
-          title: "Production Deployment"
+          status: ${{ needs.deploy.result == 'success' && 'success' || 'failure' }}
+          title: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'development') }} Deployment
           description: |
             **Commit:** ${{ github.event.head_commit.message }}
             **Triggered by:** ${{ github.actor }}

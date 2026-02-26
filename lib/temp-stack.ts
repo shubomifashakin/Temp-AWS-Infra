@@ -1,7 +1,7 @@
 import * as cdk from "aws-cdk-lib/core";
 import { Construct } from "constructs";
 import { Queue } from "aws-cdk-lib/aws-sqs";
-import { Bucket, EventType } from "aws-cdk-lib/aws-s3";
+import { BlockPublicAccess, Bucket, EventType } from "aws-cdk-lib/aws-s3";
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import {
   Runtime,
@@ -23,9 +23,16 @@ import { Secret } from "aws-cdk-lib/aws-secretsmanager";
 import { User } from "aws-cdk-lib/aws-iam";
 import { CfnOutput } from "aws-cdk-lib/core";
 import { LogGroup, RetentionDays } from "aws-cdk-lib/aws-logs";
+import * as acm from "aws-cdk-lib/aws-certificatemanager";
+
+import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
+import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
 
 interface TempConstructProps {
   notificationEmail: string;
+  cloudfrontPublicKey: string;
+  cloudfrontDomainName: string;
+  cloudfrontDomainCertificateArn: string;
 }
 
 class TempInfraConstruct extends Construct {
@@ -70,6 +77,7 @@ class TempInfraConstruct extends Construct {
 
     this.s3Bucket = new Bucket(this, "tempS3Bucket", {
       enforceSSL: true,
+      blockPublicAccess: BlockPublicAccess.BLOCK_ALL,
       lifecycleRules: [
         {
           enabled: true,
@@ -375,6 +383,50 @@ class TempInfraConstruct extends Construct {
       alarm.addAlarmAction(new SnsAction(this.notificationTopic)),
     );
 
+    //FIXME: CLOUDFRONT STUFF START
+    //used to verify signed urls/cookies
+    const publicKey = new cloudfront.PublicKey(this, "AssetsPublicKey", {
+      encodedKey: props.cloudfrontPublicKey,
+    });
+
+    const keyGroup = new cloudfront.KeyGroup(this, "AssetsKeyGroup", {
+      items: [publicKey],
+    });
+
+    const certificate = acm.Certificate.fromCertificateArn(
+      this,
+      "AssetsCertificate",
+      props.cloudfrontDomainCertificateArn,
+    );
+
+    const distribution = new cloudfront.Distribution(
+      this,
+      "AssetsDistribution",
+      {
+        defaultBehavior: {
+          origin: origins.S3BucketOrigin.withOriginAccessControl(this.s3Bucket),
+          viewerProtocolPolicy:
+            cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+          cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+          trustedKeyGroups: [keyGroup], //only allow requests with valid signed cookies
+        },
+        domainNames: [props.cloudfrontDomainName],
+        priceClass: cloudfront.PriceClass.PRICE_CLASS_200,
+        certificate: certificate,
+        comment: "Distribution for files the user uploaded",
+      },
+    );
+
+    new CfnOutput(this, "DistributionDomain", {
+      value: distribution.distributionDomainName,
+    });
+
+    new CfnOutput(this, "PublicKeyId", {
+      value: publicKey.publicKeyId,
+    });
+
+    //FIXME: ENDS HERE
+
     new CfnOutput(this, "applicationUsername", {
       value: this.applicationUser.userName,
       exportName: "applicationUsername",
@@ -405,6 +457,9 @@ export class TempStack extends cdk.Stack {
 
     new TempInfraConstruct(this, "TempInfraResources", {
       notificationEmail: props.notificationEmail,
+      cloudfrontPublicKey: props.cloudfrontPublicKey,
+      cloudfrontDomainName: props.cloudfrontDomainName,
+      cloudfrontDomainCertificateArn: props.cloudfrontDomainCertificateArn,
     });
   }
 }
