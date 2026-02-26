@@ -31,6 +31,12 @@ jobs:
       id-token: write
       contents: read
 
+    env:
+      NOTIFICATION_EMAIL: ${{ secrets.NOTIFICATION_EMAIL }}
+      BACKEND_DOMAIN_URL: ${{ secrets.BACKEND_DOMAIN_URL }}
+      GITHUB_ORG: ${{ github.repository_owner }}
+      GITHUB_REPO: ${{ github.event.repository.name }}
+
     runs-on: ubuntu-latest
     environment:
       name: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'development') }}
@@ -55,31 +61,15 @@ jobs:
 
       - name: Run unit tests
         run: npm test
-        env:
-          NOTIFICATION_EMAIL: ${{ secrets.NOTIFICATION_EMAIL }}
-          GITHUB_ORG: ${{ github.repository_owner }}
-          GITHUB_REPO: ${{ github.event.repository.name }}
 
       - name: Synthesize CDK App
         run: npx cdk synth
-        env:
-          NOTIFICATION_EMAIL: ${{ secrets.NOTIFICATION_EMAIL }}
-          GITHUB_ORG: ${{ github.repository_owner }}
-          GITHUB_REPO: ${{ github.event.repository.name }}
 
       - name: CDK Diff
         run: npx cdk diff
-        env:
-          NOTIFICATION_EMAIL: ${{ secrets.NOTIFICATION_EMAIL }}
-          GITHUB_ORG: ${{ github.repository_owner }}
-          GITHUB_REPO: ${{ github.event.repository.name }}
 
       - name: Deploy Temp Stack
         run: npx cdk deploy TempStack --require-approval never
-        env:
-          NOTIFICATION_EMAIL: ${{ secrets.NOTIFICATION_EMAIL }}
-          GITHUB_ORG: ${{ github.repository_owner }}
-          GITHUB_REPO: ${{ github.event.repository.name }}
 
   notify:
     name: Notify Discord

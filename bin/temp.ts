@@ -14,6 +14,7 @@ if (!notificationEmail) {
 
 const githubOrg = process.env.GITHUB_ORG;
 const githubRepo = process.env.GITHUB_REPO;
+const backendDomainUrl = process.env.BACKEND_DOMAIN_URL;
 
 if (!githubOrg) {
   throw new Error("GITHUB_ORG environment variable must be set");
@@ -21,6 +22,10 @@ if (!githubOrg) {
 
 if (!githubRepo) {
   throw new Error("GITHUB_REPO environment variable must be set");
+}
+
+if (!backendDomainUrl) {
+  throw new Error("BACKEND_DOMAIN_URL environment variable must be set");
 }
 
 const app = new cdk.App();
@@ -32,4 +37,5 @@ new GitHubActionsRoleStack(app, "GitHubActionsStack", {
 
 new TempStack(app, "TempStack", {
   notificationEmail,
+  backendDomainUrl,
 });
