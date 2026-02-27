@@ -166,6 +166,7 @@ async function processRecord(
         method: "POST",
         body: JSON.stringify({
           type: "file:validated",
+          timestamp: new Date(),
           data: {
             key,
             infected: scanResult.infected,

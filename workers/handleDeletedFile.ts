@@ -91,6 +91,7 @@ export async function handler(event: SQSEvent) {
           deletedAt: new Date(),
         },
         type: "file:deleted",
+        timestamp: new Date(),
       }),
       headers: {
         "x-signature": signature,
