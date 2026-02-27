@@ -4,6 +4,7 @@ import { TempStack } from "../lib/temp-stack";
 
 import * as dotenv from "dotenv";
 import { GitHubActionsRoleStack } from "../lib/github-actions-role-stack";
+import * as fs from "fs";
 dotenv.config();
 
 const notificationEmail = process.env.NOTIFICATION_EMAIL;
@@ -16,7 +17,7 @@ const githubRepo = process.env.GITHUB_REPO;
 const domainName = process.env.CLOUDFRONT_DOMAIN_NAME;
 const cloudfrontDomainCertificateArn =
   process.env.CLOUDFRONT_DOMAIN_CERTIFICATE_ARN;
-const cloudfrontPublicKey = process.env.CLOUDFRONT_PUBLIC_KEY;
+const cloudfrontPublicKey = fs.readFileSync("cf-public-key.pem", "utf-8");
 const backendDomainUrl = process.env.BACKEND_DOMAIN_URL;
 
 if (!githubOrg || !githubRepo) {
@@ -49,7 +50,7 @@ new GitHubActionsRoleStack(app, "GitHubActionsStack", {
 new TempStack(app, "TempStack", {
   notificationEmail,
   cloudfrontDomainName: domainName,
-  cloudfrontPublicKey: cloudfrontPublicKey,
-  cloudfrontDomainCertificateArn: cloudfrontDomainCertificateArn,
+  cloudfrontPublicKey,
+  cloudfrontDomainCertificateArn,
   backendDomainUrl,
 });
