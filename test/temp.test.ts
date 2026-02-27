@@ -218,6 +218,17 @@ describe("TempStack Infrastructure", () => {
     });
   });
 
+  describe("CloudFront Distribution", () => {
+    test("distribution has correct domain name", () => {
+      template.hasResourceProperties("AWS::CloudFront::Distribution", {
+        DistributionConfig: {
+          Aliases: ["testdomain.com"],
+          PriceClass: "PriceClass_200",
+        },
+      });
+    });
+  });
+
   describe("IAM Permissions", () => {
     test("application user has S3 permissions", () => {
       template.hasResourceProperties("AWS::IAM::Policy", {
