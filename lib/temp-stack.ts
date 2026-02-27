@@ -421,7 +421,7 @@ class TempInfraConstruct extends Construct {
           viewerProtocolPolicy:
             cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
           cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
-          trustedKeyGroups: [keyGroup], //only allow requests with valid signed cookies
+          trustedKeyGroups: [keyGroup],
         },
         domainNames: [props.cloudfrontDomainName],
         priceClass: cloudfront.PriceClass.PRICE_CLASS_200,
