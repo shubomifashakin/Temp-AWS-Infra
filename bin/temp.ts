@@ -5,6 +5,7 @@ import { TempStack } from "../lib/temp-stack";
 import * as dotenv from "dotenv";
 import { GitHubActionsRoleStack } from "../lib/github-actions-role-stack";
 import * as fs from "fs";
+import { AwsSolutionsChecks } from "cdk-nag/lib/packs/aws-solutions";
 dotenv.config();
 
 const notificationEmail = process.env.NOTIFICATION_EMAIL;
@@ -54,3 +55,9 @@ new TempStack(app, "TempStack", {
   cloudfrontDomainCertificateArn,
   backendDomainUrl,
 });
+
+cdk.Aspects.of(app).add(
+  new AwsSolutionsChecks({
+    verbose: true,
+  }),
+);

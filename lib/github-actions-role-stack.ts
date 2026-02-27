@@ -9,6 +9,7 @@ import {
   FederatedPrincipal,
 } from "aws-cdk-lib/aws-iam";
 import { CfnOutput } from "aws-cdk-lib/core";
+import { AwsSolutionsChecks, NagSuppressions } from "cdk-nag";
 
 interface GitHubActionsRoleStackProps extends cdk.StackProps {
   githubOrg: string;
@@ -111,5 +112,44 @@ export class GitHubActionsRoleStack extends cdk.Stack {
       description: `GitHub Actions deployment role ARN`,
       exportName: `GitHubActionsRoleArn`,
     });
+
+    NagSuppressions.addResourceSuppressions(
+      this.role,
+      [
+        {
+          id: "AwsSolutions-IAM4",
+          reason:
+            "AWSCloudFormationFullAccess is intentionally used for the GitHub Actions deployment role to manage CloudFormation stacks",
+          appliesTo: [
+            "Policy::arn:<AWS::Partition>:iam::aws:policy/AWSCloudFormationFullAccess",
+          ],
+        },
+        {
+          id: "AwsSolutions-IAM5",
+          reason:
+            "Broad permissions are intentionally granted to the GitHub Actions deployment role to allow CDK deployments across all required services",
+          appliesTo: [
+            "Action::s3:*",
+            "Action::lambda:*",
+            "Action::sqs:*",
+            "Action::sns:*",
+            "Action::secretsmanager:*",
+            "Action::cloudwatch:*",
+            "Action::logs:*",
+            "Action::ecr:*",
+            "Action::cloudfront:*",
+            "Resource::*",
+            "Resource::arn:aws:iam::<AWS::AccountId>:user/TempStack-*applicationUser*",
+          ],
+        },
+      ],
+      true,
+    );
+
+    cdk.Aspects.of(this).add(
+      new AwsSolutionsChecks({
+        verbose: true,
+      }),
+    );
   }
 }
