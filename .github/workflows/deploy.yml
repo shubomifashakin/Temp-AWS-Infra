@@ -59,7 +59,9 @@ jobs:
           node-version: "24"
 
       - name: Decode CloudFront public key
-        run: echo "${{ secrets.CLOUDFRONT_PUBLIC_KEY }}" | base64 -d > cf-public-key.pem
+        run: |
+          echo "${{ secrets.CLOUDFRONT_PUBLIC_KEY }}" | base64 -d > cf-public-key.pem
+          echo "${{ secrets.CLOUDFRONT_PUBLIC_KEY }}" | base64 -d > test/public-key.pem
 
       - name: Install dependencies
         run: npm ci

@@ -1,6 +1,7 @@
 import * as cdk from "aws-cdk-lib/core";
 import { Match, Template } from "aws-cdk-lib/assertions";
 import * as Temp from "../lib/temp-stack";
+import * as fs from "fs";
 
 describe("TempStack Infrastructure", () => {
   let template: Template;
@@ -10,9 +11,10 @@ describe("TempStack Infrastructure", () => {
     const stack = new Temp.TempStack(app, "MyTestStack", {
       notificationEmail: "testemail@gmail.com",
       backendDomainUrl: "testdomain.com",
-      cloudfrontPublicKey: "testpublickey",
+      cloudfrontPublicKey: fs.readFileSync("./test/public-key.pem", "utf8"),
       cloudfrontDomainName: "testdomain.com",
-      cloudfrontDomainCertificateArn: "testarn",
+      cloudfrontDomainCertificateArn:
+        "arn:aws:acm:us-east-1:123456789012:certificate/12345678-1234-1234-1234-123456789012",
     });
     template = Template.fromStack(stack);
   });
