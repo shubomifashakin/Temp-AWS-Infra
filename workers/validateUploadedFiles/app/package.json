@@ -1,0 +1,20 @@
+{
+  "name": "validate-uploaded-files",
+  "version": "1.0.0",
+  "description": "ClamAV file scanner for S3",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.handler"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.705.0",
+    "@aws-sdk/client-secrets-manager": "^3.985.0",
+    "@aws-sdk/client-sqs": "^3.990.0"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.145",
+    "@types/node": "^20.11.0",
+    "typescript": "^5.3.3"
+  }
+}
