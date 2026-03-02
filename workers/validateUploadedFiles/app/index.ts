@@ -12,6 +12,7 @@ import {
 
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { SendMessageCommand, SQSClient } from "@aws-sdk/client-sqs";
+import { createHmac } from "crypto";
 
 const awsRegion = process.env.AWS_REGION;
 const webhookUrl = process.env.WEBHOOK_URL!;
@@ -98,17 +99,14 @@ export const handler = async (
   }
 
   const parsedSecretsString = JSON.parse(secret.SecretString) as {
-    signature: string;
+    secret: string;
   };
 
   for (const record of event.Records) {
     const body = JSON.parse(record.body) as S3EventNotification;
 
     for (const s3Record of body.Records) {
-      const result = await processRecord(
-        s3Record,
-        parsedSecretsString.signature,
-      );
+      const result = await processRecord(s3Record, parsedSecretsString.secret);
 
       if (!result.success) {
         batchItemFailures.push({ itemIdentifier: record.messageId });
@@ -123,7 +121,7 @@ export const handler = async (
 
 async function processRecord(
   record: S3EventRecord,
-  signature: string,
+  secret: string,
 ): Promise<FnResult<ScanResult>> {
   const bucket = record.s3.bucket.name;
   const key = decodeURIComponent(record.s3.object.key.replace(/\+/g, " "));
@@ -160,16 +158,20 @@ async function processRecord(
       console.log("infected file queued for removal");
     }
 
+    const body = JSON.stringify({
+      type: "file:validated",
+      timestamp: new Date(),
+      data: {
+        key,
+        infected: scanResult.infected,
+      },
+    });
+
+    const signature = createHmac("sha256", secret).update(body).digest("hex");
+
     const response = await fetch(webhookUrl, {
       method: "POST",
-      body: JSON.stringify({
-        type: "file:validated",
-        timestamp: new Date(),
-        data: {
-          key,
-          infected: scanResult.infected,
-        },
-      }),
+      body,
       headers: {
         "x-signature": signature,
         "Content-Type": "application/json",

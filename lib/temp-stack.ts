@@ -78,9 +78,9 @@ class TempInfraConstruct extends Construct {
       generateSecretString: {
         passwordLength: 32,
         includeSpace: false,
-        generateStringKey: "signature",
+        generateStringKey: "secret",
         secretStringTemplate: JSON.stringify({
-          signature: "",
+          secret: "",
         }),
       },
     });
