@@ -25,7 +25,12 @@ import {
 import { SnsAction } from "aws-cdk-lib/aws-cloudwatch-actions";
 import { EmailSubscription } from "aws-cdk-lib/aws-sns-subscriptions";
 import { Secret } from "aws-cdk-lib/aws-secretsmanager";
-import { User } from "aws-cdk-lib/aws-iam";
+import {
+  Effect,
+  PolicyStatement,
+  ServicePrincipal,
+  User,
+} from "aws-cdk-lib/aws-iam";
 import { CfnOutput } from "aws-cdk-lib/core";
 import { LogGroup, RetentionDays } from "aws-cdk-lib/aws-logs";
 import * as acm from "aws-cdk-lib/aws-certificatemanager";
@@ -426,6 +431,26 @@ class TempInfraConstruct extends Construct {
       this.deleteQueueDepthAlarm,
     ].forEach((alarm) =>
       alarm.addAlarmAction(new SnsAction(this.notificationTopic)),
+    );
+
+    this.notificationTopic.addToResourcePolicy(
+      new PolicyStatement({
+        actions: ["SNS:Publish"],
+        principals: [new ServicePrincipal("cloudwatch.amazonaws.com")],
+        resources: [this.notificationTopic.topicArn],
+        conditions: {
+          ArnEquals: {
+            "aws:SourceArn": [
+              this.putDlqAlarm.alarmArn,
+              this.deleteDlqAlarm.alarmArn,
+              this.lambdaProcessingTimeAlarm.alarmArn,
+              this.putQueueDepthAlarm.alarmArn,
+              this.deleteQueueDepthAlarm.alarmArn,
+            ],
+          },
+        },
+        effect: Effect.ALLOW,
+      }),
     );
 
     //used to verify signed urls/cookies
