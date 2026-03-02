@@ -20,7 +20,6 @@ on:
       - "cdk.json"
       - "tsconfig.json"
       - ".github/workflows/deploy.yml"
-
     branches:
       - dev
 
