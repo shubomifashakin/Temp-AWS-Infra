@@ -278,6 +278,7 @@ class TempInfraConstruct extends Construct {
         retryAttempts: 2,
         timeout: cdk.Duration.minutes(1),
         environment: {
+          WEBHOOK_URL: props.backendWebhookUrl,
           WEBHOOK_SECRET_ARN: this.webhookSignatureSecret.secretArn,
         },
         logGroup: new LogGroup(this, "removeDeletedFilesLambdaLogGroup", {
