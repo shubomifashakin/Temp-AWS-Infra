@@ -3,6 +3,7 @@ import {
   GetSecretValueCommand,
   SecretsManagerClient,
 } from "@aws-sdk/client-secrets-manager";
+import { createHmac } from "crypto";
 
 const awsRegion = process.env.AWS_REGION;
 const webhookUrl = process.env.WEBHOOK_URL!;
@@ -83,20 +84,30 @@ export async function handler(event: SQSEvent) {
     throw new Error("Secret string is empty");
   }
 
-  const { signature } = JSON.parse(secret.SecretString) as {
-    signature: string;
+  const { secret: webhookSecret } = JSON.parse(secret.SecretString) as {
+    secret: string;
   };
+
+  if (!webhookSecret) {
+    throw new Error("webhook secret is empty");
+  }
+
+  const body = JSON.stringify({
+    data: {
+      keys: keys,
+      deletedAt: new Date(),
+    },
+    type: "file:deleted",
+    timestamp: new Date(),
+  });
+
+  const signature = createHmac("sha256", webhookSecret)
+    .update(body)
+    .digest("hex");
 
   const response = await fetch(webhookUrl, {
     method: "POST",
-    body: JSON.stringify({
-      data: {
-        keys: keys,
-        deletedAt: new Date(),
-      },
-      type: "file:deleted",
-      timestamp: new Date(),
-    }),
+    body,
     headers: {
       "x-signature": signature,
       "Content-Type": "application/json",
