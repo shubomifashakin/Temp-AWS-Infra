@@ -144,7 +144,7 @@ async function processRecord(
     console.log("Scan result:", scanResult);
 
     if (scanResult.infected) {
-      console.log("Queuing infected file for removal");
+      console.log("Queuing infected file for removal", scanResult?.virus);
 
       const sendMessage = new SendMessageCommand({
         QueueUrl: infectedQueueUrl,
