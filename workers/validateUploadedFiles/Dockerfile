@@ -1,5 +1,5 @@
 # Use the official AWS Lambda Node.js base image
-FROM public.ecr.aws/lambda/nodejs:20
+FROM public.ecr.aws/lambda/nodejs@sha256:1d103fa43ec950fec9f0a2f678ece499dd58276a45cbbac52e2ae2d8511ac9ab
 
 # 1. Install Prerequisites - Tools and Libraries
 RUN dnf install -y \
