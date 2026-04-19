@@ -335,6 +335,7 @@ class TempInfraConstruct extends Construct {
     this.s3Bucket.addEventNotification(
       EventType.LIFECYCLE_EXPIRATION_DELETE,
       new SqsDestination(this.deleteEventsSqsQueue),
+      { prefix: "uploads/" },
     );
 
     this.s3Bucket.grantPut(this.applicationUser);
