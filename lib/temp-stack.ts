@@ -375,7 +375,7 @@ class TempInfraConstruct extends Construct {
     );
 
     this.putDlqAlarm = new Alarm(this, "putDlqAlarm", {
-      threshold: 2,
+      threshold: 1,
       evaluationPeriods: 2,
       treatMissingData: TreatMissingData.IGNORE,
       metric: this.putSqsDlq.metricApproximateNumberOfMessagesVisible({
@@ -384,11 +384,11 @@ class TempInfraConstruct extends Construct {
         visible: true,
       }),
       comparisonOperator: ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
-      alarmDescription: "There are more than 2 messages in the put sqs dlq",
+      alarmDescription: "There are messages in the put sqs dlq",
     });
 
     this.deleteDlqAlarm = new Alarm(this, "deleteDlqAlarm", {
-      threshold: 2,
+      threshold: 1,
       evaluationPeriods: 2,
       treatMissingData: TreatMissingData.IGNORE,
       metric: this.deleteSqsDlq.metricApproximateNumberOfMessagesVisible({
@@ -397,7 +397,7 @@ class TempInfraConstruct extends Construct {
         visible: true,
       }),
       comparisonOperator: ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
-      alarmDescription: "There are more than 2 messages in the delete sqs dlq",
+      alarmDescription: "There are messages in the delete sqs dlq",
     });
 
     this.putQueueDepthAlarm = new Alarm(this, "putQueueDepthAlarm", {

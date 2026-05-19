@@ -165,21 +165,20 @@ describe("TempStack Infrastructure", () => {
 
     test("putDlqAlarm is configured correctly", () => {
       template.hasResourceProperties("AWS::CloudWatch::Alarm", {
-        Threshold: 2,
+        Threshold: 1,
         EvaluationPeriods: 2,
         ComparisonOperator: "GreaterThanOrEqualToThreshold",
-        AlarmDescription: "There are more than 2 messages in the put sqs dlq",
+        AlarmDescription: "There are messages in the put sqs dlq",
         TreatMissingData: "ignore",
       });
     });
 
     test("deleteDlqAlarm is configured correctly", () => {
       template.hasResourceProperties("AWS::CloudWatch::Alarm", {
-        Threshold: 2,
+        Threshold: 1,
         EvaluationPeriods: 2,
         ComparisonOperator: "GreaterThanOrEqualToThreshold",
-        AlarmDescription:
-          "There are more than 2 messages in the delete sqs dlq",
+        AlarmDescription: "There are messages in the delete sqs dlq",
         TreatMissingData: "ignore",
       });
     });
