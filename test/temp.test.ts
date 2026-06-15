@@ -1,7 +1,6 @@
 import * as cdk from "aws-cdk-lib/core";
 import { Match, Template } from "aws-cdk-lib/assertions";
 import * as Temp from "../lib/temp-stack";
-import * as fs from "fs";
 
 describe("TempStack Infrastructure", () => {
   let template: Template;
@@ -12,7 +11,10 @@ describe("TempStack Infrastructure", () => {
       notificationEmail: "testemail@gmail.com",
       frontendDomainUrl: "testdomain.com",
       backendWebhookUrl: "testwebhook.com",
-      cloudfrontPublicKey: fs.readFileSync("./test/public-key.pem", "utf8"),
+      cloudfrontPublicKey: Buffer.from(
+        process.env.CLOUDFRONT_PUBLIC_KEY_BASE64!,
+        "base64",
+      ).toString("utf-8"),
       cloudfrontDomainName: "testdomain.com",
       cloudfrontDomainCertificateArn:
         "arn:aws:acm:us-east-1:123456789012:certificate/12345678-1234-1234-1234-123456789012",
