@@ -36,11 +36,11 @@ jobs:
       NOTIFICATION_EMAIL: ${{ secrets.NOTIFICATION_EMAIL }}
       FRONTEND_DOMAIN_URL: ${{ secrets.FRONTEND_DOMAIN_URL }}
       BACKEND_WEBHOOK_URL: ${{ secrets.BACKEND_WEBHOOK_URL }}
-      GITHUB_ORG: ${{ github.repository_owner }}
-      GITHUB_REPO: ${{ github.event.repository.name }}
+      REPO_OWNER: ${{ github.repository_owner }}
+      REPO_NAME: ${{ github.event.repository.name }}
       CLOUDFRONT_DOMAIN_NAME: ${{ secrets.CLOUDFRONT_DOMAIN_NAME }}
       CLOUDFRONT_DOMAIN_CERTIFICATE_ARN: ${{ secrets.CLOUDFRONT_DOMAIN_CERTIFICATE_ARN }}
-      CLOUDFRONT_PUBLIC_KEY: ${{ secrets.CLOUDFRONT_PUBLIC_KEY }}
+      CLOUDFRONT_PUBLIC_KEY_BASE64: ${{ secrets.CLOUDFRONT_PUBLIC_KEY_BASE64 }}
 
     steps:
       - name: Checkout code
@@ -56,11 +56,6 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: "24"
-
-      - name: Decode CloudFront public key
-        run: |
-          echo "${{ secrets.CLOUDFRONT_PUBLIC_KEY }}" | base64 -d > cf-public-key.pem
-          echo "${{ secrets.CLOUDFRONT_PUBLIC_KEY }}" | base64 -d > test/public-key.pem
 
       - name: Install dependencies
         run: npm ci

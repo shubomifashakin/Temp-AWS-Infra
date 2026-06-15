@@ -4,7 +4,6 @@ import { TempStack } from "../lib/temp-stack";
 
 import * as dotenv from "dotenv";
 import { GitHubActionsRoleStack } from "../lib/github-actions-role-stack";
-import * as fs from "fs";
 import { AwsSolutionsChecks } from "cdk-nag/lib/packs/aws-solutions";
 dotenv.config();
 
@@ -13,12 +12,12 @@ if (!notificationEmail) {
   throw new Error("NOTIFICATION_EMAIL environment variable must be set");
 }
 
-const githubOrg = process.env.GITHUB_ORG;
-const githubRepo = process.env.GITHUB_REPO;
+const githubOrg = process.env.REPO_OWNER;
+const githubRepo = process.env.REPO_NAME;
 const cloudfrontDomainName = process.env.CLOUDFRONT_DOMAIN_NAME;
 const cloudfrontDomainCertificateArn =
   process.env.CLOUDFRONT_DOMAIN_CERTIFICATE_ARN;
-const cloudfrontPublicKey = fs.readFileSync("cf-public-key.pem", "utf-8");
+const cloudfrontPublicKeyBase64 = process.env.CLOUDFRONT_PUBLIC_KEY_BASE64;
 const frontendDomainUrl = process.env.FRONTEND_DOMAIN_URL;
 const backendWebhookUrl = process.env.BACKEND_WEBHOOK_URL;
 
@@ -26,11 +25,16 @@ if (!githubOrg || !githubRepo) {
   throw new Error("GITHUB_ORG or GITHUB_REPO environment variable must be set");
 }
 
-if (!cloudfrontDomainName || !cloudfrontPublicKey) {
+if (!cloudfrontDomainName || !cloudfrontPublicKeyBase64) {
   throw new Error(
-    "CLOUDFRONT_DOMAIN_NAME or CLOUDFRONT_PUBLIC_KEY environment variable must be set",
+    "CLOUDFRONT_DOMAIN_NAME or CLOUDFRONT_PUBLIC_KEY_BASE64 environment variable must be set",
   );
 }
+
+const cloudfrontPublicKey = Buffer.from(
+  cloudfrontPublicKeyBase64,
+  "base64",
+).toString("utf-8");
 
 if (!cloudfrontDomainCertificateArn) {
   throw new Error(
