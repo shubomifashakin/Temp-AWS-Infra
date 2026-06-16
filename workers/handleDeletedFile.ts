@@ -118,7 +118,7 @@ export async function handler(event: SQSEvent) {
     console.error("Failed to delete files", {
       status: response.status,
       statusText: response.statusText,
-      body: await response.text(),
+      body: await response.json(),
     });
 
     throw new Error("Failed to delete files");
