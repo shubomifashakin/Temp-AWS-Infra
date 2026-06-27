@@ -18,6 +18,7 @@ const awsRegion = process.env.AWS_REGION;
 const webhookUrl = process.env.WEBHOOK_URL!;
 const webhookSecretArn = process.env.WEBHOOK_SECRET_ARN!;
 const infectedQueueUrl = process.env.INFECTED_QUEUE_URL!;
+const cloudflareBypassSecret = process.env.CLOUDFLARE_BYPASS_SECRET!;
 
 const secretsManagerClient = new SecretsManagerClient({ region: awsRegion });
 
@@ -175,6 +176,7 @@ async function processRecord(
       headers: {
         "x-signature": signature,
         "Content-Type": "application/json",
+        "x-internal-token": cloudflareBypassSecret,
       },
     });
 

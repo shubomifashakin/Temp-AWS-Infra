@@ -20,6 +20,11 @@ const cloudfrontDomainCertificateArn =
 const cloudfrontPublicKeyBase64 = process.env.CLOUDFRONT_PUBLIC_KEY_BASE64;
 const frontendDomainUrl = process.env.FRONTEND_DOMAIN_URL;
 const backendWebhookUrl = process.env.BACKEND_WEBHOOK_URL;
+const cloudflareBypassSecret = process.env.CLOUDFLARE_BYPASS_SECRET;
+
+if (!cloudflareBypassSecret) {
+  throw new Error("CLOUDFLARE_BYPASS_SECRET environment variable must be set");
+}
 
 if (!githubOrg || !githubRepo) {
   throw new Error("GITHUB_ORG or GITHUB_REPO environment variable must be set");
@@ -62,6 +67,7 @@ new TempStack(app, "TempStack", {
   cloudfrontDomainCertificateArn,
   frontendDomainUrl,
   backendWebhookUrl,
+  cloudflareBypassSecret,
 });
 
 cdk.Aspects.of(app).add(
