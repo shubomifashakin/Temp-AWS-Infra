@@ -46,6 +46,7 @@ interface TempConstructProps {
   cloudfrontDomainCertificateArn: string;
   frontendDomainUrl: string;
   backendWebhookUrl: string;
+  cloudflareBypassSecret: string;
 }
 
 class TempInfraConstruct extends Construct {
@@ -258,6 +259,7 @@ class TempInfraConstruct extends Construct {
           WEBHOOK_URL: props.backendWebhookUrl,
           WEBHOOK_SECRET_ARN: this.webhookSignatureSecret.secretArn,
           INFECTED_QUEUE_URL: this.infectedFilesQueue.queueUrl,
+          CLOUDFLARE_BYPASS_SECRET: props.cloudflareBypassSecret,
         },
         logGroup: new LogGroup(this, "validateUploadedFilesLambdaLogGroup", {
           retention: RetentionDays.FIVE_DAYS,
@@ -280,6 +282,7 @@ class TempInfraConstruct extends Construct {
         environment: {
           WEBHOOK_URL: props.backendWebhookUrl,
           WEBHOOK_SECRET_ARN: this.webhookSignatureSecret.secretArn,
+          CLOUDFLARE_BYPASS_SECRET: props.cloudflareBypassSecret,
         },
         logGroup: new LogGroup(this, "removeDeletedFilesLambdaLogGroup", {
           retention: RetentionDays.FIVE_DAYS,
@@ -607,6 +610,7 @@ export class TempStack extends cdk.Stack {
       cloudfrontPublicKey: props.cloudfrontPublicKey,
       cloudfrontDomainName: props.cloudfrontDomainName,
       cloudfrontDomainCertificateArn: props.cloudfrontDomainCertificateArn,
+      cloudflareBypassSecret: props.cloudflareBypassSecret,
     });
 
     NagSuppressions.addStackSuppressions(this, [
