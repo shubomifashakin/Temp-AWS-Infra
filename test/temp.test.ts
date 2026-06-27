@@ -18,6 +18,7 @@ describe("TempStack Infrastructure", () => {
       cloudfrontDomainName: "testdomain.com",
       cloudfrontDomainCertificateArn:
         "arn:aws:acm:us-east-1:123456789012:certificate/12345678-1234-1234-1234-123456789012",
+      cloudflareBypassSecret: "test-secret",
     });
     template = Template.fromStack(stack);
   });
@@ -124,6 +125,7 @@ describe("TempStack Infrastructure", () => {
             WEBHOOK_SECRET_ARN: {
               Ref: Match.anyValue(),
             },
+            CLOUDFLARE_BYPASS_SECRET: "test-secret",
           },
         },
       });
@@ -140,6 +142,7 @@ describe("TempStack Infrastructure", () => {
             WEBHOOK_SECRET_ARN: {
               Ref: Match.anyValue(),
             },
+            CLOUDFLARE_BYPASS_SECRET: "test-secret",
           },
         },
       });
