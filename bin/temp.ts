@@ -7,71 +7,51 @@ import { GitHubActionsRoleStack } from "../lib/github-actions-role-stack";
 import { AwsSolutionsChecks } from "cdk-nag/lib/packs/aws-solutions";
 dotenv.config();
 
-const notificationEmail = process.env.NOTIFICATION_EMAIL;
-if (!notificationEmail) {
-  throw new Error("NOTIFICATION_EMAIL environment variable must be set");
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`${name} environment variable must be set`);
+  }
+  return value;
 }
 
-const githubOrg = process.env.REPO_OWNER;
-const githubRepo = process.env.REPO_NAME;
-const cloudfrontDomainName = process.env.CLOUDFRONT_DOMAIN_NAME;
-const cloudfrontDomainCertificateArn =
-  process.env.CLOUDFRONT_DOMAIN_CERTIFICATE_ARN;
-const cloudfrontPublicKeyBase64 = process.env.CLOUDFRONT_PUBLIC_KEY_BASE64;
-const frontendDomainUrl = process.env.FRONTEND_DOMAIN_URL;
-const backendWebhookUrl = process.env.BACKEND_WEBHOOK_URL;
-const cloudflareBypassSecret = process.env.CLOUDFLARE_BYPASS_SECRET;
-
-if (!cloudflareBypassSecret) {
-  throw new Error("CLOUDFLARE_BYPASS_SECRET environment variable must be set");
-}
-
-if (!githubOrg || !githubRepo) {
-  throw new Error("GITHUB_ORG or GITHUB_REPO environment variable must be set");
-}
-
-if (!cloudfrontDomainName || !cloudfrontPublicKeyBase64) {
-  throw new Error(
-    "CLOUDFRONT_DOMAIN_NAME or CLOUDFRONT_PUBLIC_KEY_BASE64 environment variable must be set",
-  );
-}
-
-const cloudfrontPublicKey = Buffer.from(
-  cloudfrontPublicKeyBase64,
-  "base64",
-).toString("utf-8");
-
-if (!cloudfrontDomainCertificateArn) {
-  throw new Error(
-    "CLOUDFRONT_DOMAIN_CERTIFICATE_ARN environment variable must be set",
-  );
-}
-
-if (!frontendDomainUrl || !backendWebhookUrl) {
-  throw new Error(
-    "FRONTEND_DOMAIN_URL or BACKEND_WEBHOOK_URL environment variable must be set",
-  );
-}
+const env = {
+  notificationEmail: requireEnv("NOTIFICATION_EMAIL"),
+  githubOrg: requireEnv("REPO_OWNER"),
+  githubRepo: requireEnv("REPO_NAME"),
+  cloudfrontDomainName: requireEnv("CLOUDFRONT_DOMAIN_NAME"),
+  cloudfrontDomainCertificateArn: requireEnv(
+    "CLOUDFRONT_DOMAIN_CERTIFICATE_ARN",
+  ),
+  cloudfrontPublicKey: Buffer.from(
+    requireEnv("CLOUDFRONT_PUBLIC_KEY_BASE64"),
+    "base64",
+  ).toString("utf-8"),
+  frontendDomainUrl: requireEnv("FRONTEND_DOMAIN_URL"),
+  backendWebhookUrl: requireEnv("BACKEND_WEBHOOK_URL"),
+  cloudflareBypassSecret: requireEnv("CLOUDFLARE_BYPASS_SECRET"),
+};
 
 const app = new cdk.App();
 
 new GitHubActionsRoleStack(app, "GitHubActionsStack", {
-  githubOrg,
-  githubRepo,
+  githubOrg: env.githubOrg,
+  githubRepo: env.githubRepo,
 });
 
 new TempStack(app, "TempStack", {
-  notificationEmail,
-  cloudfrontDomainName,
-  cloudfrontPublicKey,
-  cloudfrontDomainCertificateArn,
-  frontendDomainUrl,
-  backendWebhookUrl,
-  cloudflareBypassSecret,
+  notificationEmail: env.notificationEmail,
+  cloudfrontDomainName: env.cloudfrontDomainName,
+  cloudfrontPublicKey: env.cloudfrontPublicKey,
+  cloudfrontDomainCertificateArn: env.cloudfrontDomainCertificateArn,
+  frontendDomainUrl: env.frontendDomainUrl,
+  backendWebhookUrl: env.backendWebhookUrl,
+  cloudflareBypassSecret: env.cloudflareBypassSecret,
 });
 
 cdk.Aspects.of(app).add(
   new AwsSolutionsChecks({
     verbose: true,
+    logIgnores: true,
   }),
 );
