@@ -12,14 +12,6 @@ on:
           - development
           - production
   push:
-    paths:
-      - "bin/**"
-      - "package*.json"
-      - "workers/**"
-      - "lib/**"
-      - "cdk.json"
-      - "tsconfig.json"
-      - ".github/workflows/deploy.yml"
     branches:
       - dev
 
