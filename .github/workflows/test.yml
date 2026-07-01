@@ -17,7 +17,21 @@ on:
       - dev
 
 jobs:
+  secret-scanning:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Run secret scanning
+        uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   unit-test:
+    needs: [secret-scanning]
     permissions:
       id-token: write
       contents: read
@@ -66,14 +80,14 @@ jobs:
   notify:
     name: Notify Discord
     runs-on: ubuntu-latest
-    needs: [unit-test]
+    needs: [secret-scanning, unit-test]
     if: always()
     steps:
       - name: Send Discord Notification
         uses: sarisia/actions-status-discord@v1.16.0
         with:
           webhook: ${{ secrets.DISCORD_WEBHOOK }}
-          status: ${{ needs.unit-test.result == 'success' && 'success' || 'failure' }}
+          status: ${{ needs.secret-scanning.result != 'failure' && needs.unit-test.result == 'success' && 'success' || 'failure' }}
           title: Unit Test Results
           description: |
             **Commit:** ${{ github.event.head_commit.message }}
