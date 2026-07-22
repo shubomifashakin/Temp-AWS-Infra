@@ -1,0 +1,21 @@
+{
+  "name": "scan-large-files",
+  "version": "1.0.0",
+  "description": "Long-running ClamAV scanner for large S3 multipart uploads",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@aws-sdk/client-auto-scaling": "^3.705.0",
+    "@aws-sdk/client-s3": "^3.705.0",
+    "@aws-sdk/client-secrets-manager": "^3.985.0",
+    "@aws-sdk/client-sqs": "^3.990.0",
+    "@aws-sdk/ec2-metadata-service": "^3.1093.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.3.3"
+  }
+}

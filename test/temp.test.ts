@@ -79,6 +79,36 @@ xwIDAQAB
             },
             {
               Status: "Enabled",
+              ExpirationInDays: 7,
+              TagFilters: [
+                {
+                  Key: "retention",
+                  Value: "7-days",
+                },
+              ],
+            },
+            {
+              Status: "Enabled",
+              ExpirationInDays: 14,
+              TagFilters: [
+                {
+                  Key: "retention",
+                  Value: "14-days",
+                },
+              ],
+            },
+            {
+              Status: "Enabled",
+              ExpirationInDays: 30,
+              TagFilters: [
+                {
+                  Key: "retention",
+                  Value: "30-days",
+                },
+              ],
+            },
+            {
+              Status: "Enabled",
               ExpirationInDays: 31,
               Prefix: "access-logs/",
             },

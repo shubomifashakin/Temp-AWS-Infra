@@ -111,6 +111,7 @@ class TempInfraConstruct extends Construct {
         },
       ],
       lifecycleRules: [
+        // FIXME: REMOVE ALL LIFETIME TAG FILTERS ONCE RETENTION TAG IS IMPLEMENTED
         {
           enabled: true,
           tagFilters: { lifetime: "short" },
@@ -125,6 +126,21 @@ class TempInfraConstruct extends Construct {
           enabled: true,
           tagFilters: { lifetime: "long" },
           expiration: cdk.Duration.days(31),
+        },
+        {
+          enabled: true,
+          tagFilters: { retention: "7-days" },
+          expiration: cdk.Duration.days(7),
+        },
+        {
+          enabled: true,
+          tagFilters: { retention: "14-days" },
+          expiration: cdk.Duration.days(14),
+        },
+        {
+          enabled: true,
+          tagFilters: { retention: "30-days" },
+          expiration: cdk.Duration.days(30),
         },
         {
           enabled: true,
@@ -579,6 +595,26 @@ class TempInfraConstruct extends Construct {
     this.s3Bucket.grantRead(scannerRole);
     this.infectedFilesQueue.grantSendMessages(scannerRole);
     this.multipartContentQueue.grantConsumeMessages(scannerRole);
+    this.webhookSignatureSecret.grantRead(scannerRole);
+
+    const scannerLifecycleHookName = "ScannerTerminationHook";
+
+    // this command is run on each instance the moment its started
+    const scannerUserData = ec2.UserData.forLinux({
+      shebang: "#!/bin/bash -xe",
+    });
+    scannerUserData.addCommands(
+      "mkdir -p /etc/scanner",
+      "cat > /etc/scanner/env << 'ENVEOF'",
+      `MULTIPART_QUEUE_URL=${this.multipartContentQueue.queueUrl}`,
+      `INFECTED_QUEUE_URL=${this.infectedFilesQueue.queueUrl}`,
+      `WEBHOOK_URL=${props.backendWebhookUrl}/webhooks/files`,
+      `WEBHOOK_SECRET_ARN=${this.webhookSignatureSecret.secretArn}`,
+      `CLOUDFLARE_BYPASS_SECRET=${props.cloudflareBypassSecret}`,
+      `SCANNER_TERMINATION_HOOK_NAME=${scannerLifecycleHookName}`,
+      "ENVEOF",
+      "systemctl start scanner",
+    );
 
     const scannerLaunchTemplate = new ec2.LaunchTemplate(
       this,
@@ -594,6 +630,18 @@ class TempInfraConstruct extends Construct {
         role: scannerRole,
         securityGroup: scannerSecurityGroup,
         requireImdsv2: true,
+        instanceMetadataTags: true,
+        userData: scannerUserData,
+        blockDevices: [
+          {
+            deviceName: "/dev/xvda",
+            volume: ec2.BlockDeviceVolume.ebs(30, {
+              deleteOnTermination: true,
+              encrypted: true,
+              volumeType: ec2.EbsDeviceVolumeType.GP3,
+            }),
+          },
+        ],
         spotOptions: {
           requestType: ec2.SpotRequestType.ONE_TIME,
           interruptionBehavior: ec2.SpotInstanceInterruption.TERMINATE,
@@ -635,13 +683,15 @@ class TempInfraConstruct extends Construct {
       adjustmentType: autoscaling.AdjustmentType.CHANGE_IN_CAPACITY,
       estimatedInstanceWarmup: cdk.Duration.minutes(3),
       evaluationPeriods: 2,
+      cooldown: cdk.Duration.minutes(2),
     });
 
-    new autoscaling.LifecycleHook(this, "ScannerTerminationHook", {
+    new autoscaling.LifecycleHook(this, scannerLifecycleHookName, {
       autoScalingGroup: scannerAsg,
       lifecycleTransition: autoscaling.LifecycleTransition.INSTANCE_TERMINATING,
       heartbeatTimeout: cdk.Duration.hours(5),
       defaultResult: autoscaling.DefaultResult.CONTINUE,
+      lifecycleHookName: scannerLifecycleHookName,
     });
 
     const scannerHighInstanceCountAlarm = new Alarm(

@@ -1,0 +1,21 @@
+[Unit]
+Description=Large File Scanner Worker
+After=network-online.target
+Wants=network-online.target
+# Only start if the env file has been written by user data
+ConditionPathExists=/etc/scanner/env
+
+[Service]
+Type=simple
+User=ec2-user
+EnvironmentFile=/etc/scanner/env
+ExecStartPre=/usr/bin/freshclam --quiet
+ExecStart=/usr/bin/node /opt/scanner/dist/index.js
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=scanner
+
+[Install]
+WantedBy=multi-user.target
