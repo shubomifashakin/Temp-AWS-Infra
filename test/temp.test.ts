@@ -8,30 +8,37 @@ describe("TempStack Infrastructure", () => {
   beforeAll(() => {
     const app = new cdk.App();
     const stack = new Temp.TempStack(app, "MyTestStack", {
+      env: { account: "123456789012", region: "us-east-1" },
       notificationEmail: "testemail@gmail.com",
       frontendDomainUrl: "testdomain.com",
       backendWebhookUrl: "testwebhook.com",
-      cloudfrontPublicKey: Buffer.from(
-        process.env.CLOUDFRONT_PUBLIC_KEY_BASE64!,
-        "base64",
-      ).toString("utf-8"),
+      cloudfrontPublicKey: `-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA2a2rwplBQLzHPZe5TNJK
+JLepPP8LxLqDg6P5rFLJ2DPXZ7rwnbA0r/kEgY9GqJReSLvlBGLBcSmJNQp0h0A5
+kVleBE+YbVLOajH4r3jXJpSg1Y0Z6xdX5+dn9ZBH9EJCVLA3Y5sJHwi6tTGdM0Lm
+QYR2iShCEgfD7n5xJYqrDLvM7uh0j5bSnP3pHx/c9d3R2P0D5LALWzrjHhOkEI2K
+b0MFLs0gL+M2NXPjfJRNg0FEqRIFZRJb+GhLpxuHJmrn2lfIKN2hKJnVOhXS8nYA
+VGS3ZO9uT5lHG6g6e7HfT8MhR7mSXz6/OjnZ8Rp7U/7fhMQFpMj7BOVk7iqIpOe4
+xwIDAQAB
+-----END PUBLIC KEY-----`,
       cloudfrontDomainName: "testdomain.com",
       cloudfrontDomainCertificateArn:
         "arn:aws:acm:us-east-1:123456789012:certificate/12345678-1234-1234-1234-123456789012",
       cloudflareBypassSecret: "test-secret",
+      largeFileScannerAmiId: "ami-12345678",
     });
     template = Template.fromStack(stack);
   });
 
   describe("Resource Counts", () => {
-    test("creates correct number of resources", () => {
+    test("creates correct number of core resources", () => {
       template.resourceCountIs("AWS::IAM::User", 1);
       template.resourceCountIs("AWS::SecretsManager::Secret", 1);
       template.resourceCountIs("AWS::S3::Bucket", 1);
-      template.resourceCountIs("AWS::SQS::Queue", 8);
+      template.resourceCountIs("AWS::SQS::Queue", 10);
       template.resourceCountIs("AWS::SNS::Topic", 1);
       template.resourceCountIs("AWS::Lambda::Function", 5);
-      template.resourceCountIs("AWS::CloudWatch::Alarm", 5);
+      template.resourceCountIs("AWS::CloudWatch::Alarm", 10);
     });
   });
 
@@ -74,6 +81,13 @@ describe("TempStack Infrastructure", () => {
               Status: "Enabled",
               ExpirationInDays: 31,
               Prefix: "access-logs/",
+            },
+            {
+              Status: "Enabled",
+              Prefix: "uploads/",
+              AbortIncompleteMultipartUpload: {
+                DaysAfterInitiation: 1,
+              },
             },
           ],
         },
@@ -287,13 +301,134 @@ describe("TempStack Infrastructure", () => {
     });
   });
 
+  describe("Large File Scanner", () => {
+    test("VPC has correct configuration", () => {
+      template.hasResourceProperties("AWS::EC2::VPC", {
+        EnableDnsHostnames: true,
+        EnableDnsSupport: true,
+      });
+    });
+
+    test("VPC has S3 gateway endpoint", () => {
+      template.hasResourceProperties("AWS::EC2::VPCEndpoint", {
+        VpcEndpointType: "Gateway",
+      });
+    });
+
+    test("security group allows all outbound and no inbound", () => {
+      template.hasResourceProperties("AWS::EC2::SecurityGroup", {
+        GroupDescription: "Large file scanner firewall",
+        SecurityGroupEgress: Match.arrayWith([
+          Match.objectLike({
+            CidrIp: "0.0.0.0/0",
+            IpProtocol: "-1",
+          }),
+        ]),
+      });
+    });
+
+    test("launch template uses correct instance type and requires IMDSv2", () => {
+      template.hasResourceProperties("AWS::EC2::LaunchTemplate", {
+        LaunchTemplateData: {
+          InstanceType: "c5.2xlarge",
+          MetadataOptions: {
+            HttpTokens: "required",
+          },
+          ImageId: "ami-12345678",
+        },
+      });
+    });
+
+    test("launch template uses spot instances", () => {
+      template.hasResourceProperties("AWS::EC2::LaunchTemplate", {
+        LaunchTemplateData: {
+          InstanceMarketOptions: {
+            MarketType: "spot",
+            SpotOptions: {
+              InstanceInterruptionBehavior: "terminate",
+              SpotInstanceType: "one-time",
+            },
+          },
+        },
+      });
+    });
+
+    test("ASG has correct capacity bounds", () => {
+      template.hasResourceProperties("AWS::AutoScaling::AutoScalingGroup", {
+        MinSize: "0",
+        MaxSize: "5",
+      });
+    });
+
+    test("ASG lifecycle hook has correct termination configuration", () => {
+      template.hasResourceProperties("AWS::AutoScaling::LifecycleHook", {
+        LifecycleTransition: "autoscaling:EC2_INSTANCE_TERMINATING",
+        HeartbeatTimeout: 18000,
+        DefaultResult: "CONTINUE",
+      });
+    });
+
+    test("scanner role can assume EC2 service principal", () => {
+      template.hasResourceProperties("AWS::IAM::Role", {
+        AssumeRolePolicyDocument: {
+          Statement: Match.arrayWith([
+            Match.objectLike({
+              Effect: "Allow",
+              Principal: { Service: "ec2.amazonaws.com" },
+              Action: "sts:AssumeRole",
+            }),
+          ]),
+        },
+        Description:
+          "Least-privilege role for large file scanner EC2 instances",
+      });
+    });
+
+    test("multipart content queue has correct configuration", () => {
+      template.hasResourceProperties("AWS::SQS::Queue", {
+        VisibilityTimeout: 21600,
+        MessageRetentionPeriod: 172800,
+        RedrivePolicy: Match.objectLike({
+          maxReceiveCount: 15,
+        }),
+      });
+    });
+
+    test("multipart content DLQ alarm is configured correctly", () => {
+      template.hasResourceProperties("AWS::CloudWatch::Alarm", {
+        Threshold: 1,
+        EvaluationPeriods: 2,
+        ComparisonOperator: "GreaterThanOrEqualToThreshold",
+        AlarmDescription:
+          "There are messages in the multipart content uploaded sqs dlq",
+        TreatMissingData: "ignore",
+      });
+    });
+
+    test("scanner high instance count alarm is configured correctly", () => {
+      template.hasResourceProperties("AWS::CloudWatch::Alarm", {
+        Threshold: 3,
+        EvaluationPeriods: 1,
+        ComparisonOperator: "GreaterThanOrEqualToThreshold",
+        AlarmDescription: "Large file scanner has scaled to 3+ instances",
+        Namespace: "AWS/AutoScaling",
+        MetricName: "GroupInServiceInstances",
+      });
+    });
+  });
+
   describe("S3 Event Notifications", () => {
-    test("S3 bucket has PUT and DELETE event notifications", () => {
+    test("S3 bucket has POST, multipart complete, and DELETE event notifications", () => {
       template.hasResourceProperties("Custom::S3BucketNotifications", {
         NotificationConfiguration: {
           QueueConfigurations: Match.arrayWith([
             Match.objectLike({
               Events: Match.arrayWith(["s3:ObjectCreated:Post"]),
+            }),
+            Match.objectLike({
+              Events: Match.arrayWith([
+                "s3:ObjectCreated:CompleteMultipartUpload",
+              ]),
             }),
             Match.objectLike({
               Events: Match.arrayWith(["s3:LifecycleExpiration:Delete"]),

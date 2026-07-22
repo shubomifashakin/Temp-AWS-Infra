@@ -30,6 +30,7 @@ const env = {
   frontendDomainUrl: requireEnv("FRONTEND_DOMAIN_URL"),
   backendWebhookUrl: requireEnv("BACKEND_WEBHOOK_URL"),
   cloudflareBypassSecret: requireEnv("CLOUDFLARE_BYPASS_SECRET"),
+  largeFileScannerAmiId: requireEnv("LARGE_FILE_SCANNER_AMI_ID"),
 };
 
 const app = new cdk.App();
@@ -40,6 +41,10 @@ new GitHubActionsRoleStack(app, "GitHubActionsStack", {
 });
 
 new TempStack(app, "TempStack", {
+  env: {
+    account: process.env.CDK_DEFAULT_ACCOUNT,
+    region: process.env.CDK_DEFAULT_REGION,
+  },
   notificationEmail: env.notificationEmail,
   cloudfrontDomainName: env.cloudfrontDomainName,
   cloudfrontPublicKey: env.cloudfrontPublicKey,
@@ -47,11 +52,11 @@ new TempStack(app, "TempStack", {
   frontendDomainUrl: env.frontendDomainUrl,
   backendWebhookUrl: env.backendWebhookUrl,
   cloudflareBypassSecret: env.cloudflareBypassSecret,
+  largeFileScannerAmiId: env.largeFileScannerAmiId,
 });
 
 cdk.Aspects.of(app).add(
   new AwsSolutionsChecks({
     verbose: true,
-    logIgnores: true,
   }),
 );

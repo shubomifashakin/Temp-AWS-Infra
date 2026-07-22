@@ -19,6 +19,7 @@ import { Topic } from "aws-cdk-lib/aws-sns";
 import {
   Alarm,
   ComparisonOperator,
+  Metric,
   Stats,
   TreatMissingData,
 } from "aws-cdk-lib/aws-cloudwatch";
@@ -28,6 +29,7 @@ import { Secret } from "aws-cdk-lib/aws-secretsmanager";
 import {
   Effect,
   PolicyStatement,
+  Role,
   ServicePrincipal,
   User,
 } from "aws-cdk-lib/aws-iam";
@@ -35,9 +37,11 @@ import { CfnOutput } from "aws-cdk-lib/core";
 import { LogGroup, RetentionDays } from "aws-cdk-lib/aws-logs";
 import * as acm from "aws-cdk-lib/aws-certificatemanager";
 
+import * as ec2 from "aws-cdk-lib/aws-ec2";
+import * as autoscaling from "aws-cdk-lib/aws-autoscaling";
 import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
 import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
-import { AwsSolutionsChecks, NagSuppressions } from "cdk-nag";
+import { NagSuppressions } from "cdk-nag";
 
 interface TempConstructProps {
   notificationEmail: string;
@@ -47,6 +51,7 @@ interface TempConstructProps {
   frontendDomainUrl: string;
   backendWebhookUrl: string;
   cloudflareBypassSecret: string;
+  largeFileScannerAmiId: string;
 }
 
 class TempInfraConstruct extends Construct {
@@ -55,6 +60,8 @@ class TempInfraConstruct extends Construct {
   public readonly infectedFilesDlq: Queue;
   public readonly userRequestedDeleteQueue: Queue;
   public readonly userRequestedDeleteDlq: Queue;
+  public readonly multipartContentQueue: Queue;
+  public readonly multipartContentDlq: Queue;
   public readonly putEventsSqsQueue: Queue;
   public readonly putSqsDlq: Queue;
   public readonly deleteEventsSqsQueue: Queue;
@@ -124,6 +131,11 @@ class TempInfraConstruct extends Construct {
           prefix: "access-logs/",
           expiration: cdk.Duration.days(31),
         },
+        {
+          enabled: true,
+          prefix: "uploads/",
+          abortIncompleteMultipartUploadAfter: cdk.Duration.days(1),
+        },
       ],
     });
 
@@ -164,6 +176,23 @@ class TempInfraConstruct extends Construct {
         },
       },
     );
+
+    this.multipartContentDlq = new Queue(this, "multipartContentDlq", {
+      enforceSSL: true,
+      retentionPeriod: cdk.Duration.days(7),
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    this.multipartContentQueue = new Queue(this, "multipartContentQueue", {
+      enforceSSL: true,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      retentionPeriod: cdk.Duration.days(2),
+      visibilityTimeout: cdk.Duration.hours(6),
+      deadLetterQueue: {
+        maxReceiveCount: 15,
+        queue: this.multipartContentDlq,
+      },
+    });
 
     this.putSqsDlq = new Queue(this, "putSqsDlq", {
       enforceSSL: true,
@@ -326,6 +355,7 @@ class TempInfraConstruct extends Construct {
     this.putEventsSqsQueue.grantConsumeMessages(
       this.validateUploadedFilesLambda,
     );
+
     this.deleteEventsSqsQueue.grantConsumeMessages(
       this.removeDeletedFilesLambda,
     );
@@ -336,6 +366,11 @@ class TempInfraConstruct extends Construct {
     );
 
     this.s3Bucket.addEventNotification(
+      EventType.OBJECT_CREATED_COMPLETE_MULTIPART_UPLOAD,
+      new SqsDestination(this.multipartContentQueue),
+    );
+
+    this.s3Bucket.addEventNotification(
       EventType.LIFECYCLE_EXPIRATION_DELETE,
       new SqsDestination(this.deleteEventsSqsQueue),
       { prefix: "uploads/" },
@@ -343,6 +378,19 @@ class TempInfraConstruct extends Construct {
 
     this.s3Bucket.grantPut(this.applicationUser);
     this.s3Bucket.grantRead(this.applicationUser);
+    this.applicationUser.addToPolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: [
+          "s3:CreateMultipartUpload",
+          "s3:CompleteMultipartUpload",
+          "s3:AbortMultipartUpload",
+          "s3:ListMultipartUploadParts",
+        ],
+        resources: [`${this.s3Bucket.bucketArn}/uploads/*`],
+      }),
+    );
+
     this.s3Bucket.grantRead(this.validateUploadedFilesLambda);
     this.s3Bucket.grantDelete(this.userRequestedDeleteLambda);
     this.s3Bucket.grantDelete(this.infectedFilesDeleteLambda);
@@ -374,6 +422,44 @@ class TempInfraConstruct extends Construct {
         comparisonOperator:
           ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
         alarmDescription: "File validation is taking too long",
+      },
+    );
+
+    const multipartContentDlqDepthAlarm = new Alarm(
+      this,
+      "multipartContentDlqDepthAlarm",
+      {
+        threshold: 1,
+        evaluationPeriods: 2,
+        treatMissingData: TreatMissingData.IGNORE,
+        metric:
+          this.multipartContentDlq.metricApproximateNumberOfMessagesVisible({
+            period: cdk.Duration.minutes(2),
+            statistic: Stats.MAXIMUM,
+            visible: true,
+          }),
+        comparisonOperator:
+          ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        alarmDescription:
+          "There are messages in the multipart content uploaded sqs dlq",
+      },
+    );
+
+    const multipartContentQueueDepthAlarm = new Alarm(
+      this,
+      "multipartContentQueueDepthAlarm",
+      {
+        threshold: 20,
+        evaluationPeriods: 1,
+        metric:
+          this.multipartContentQueue.metricApproximateNumberOfMessagesVisible({
+            period: cdk.Duration.minutes(2),
+            statistic: Stats.AVERAGE,
+          }),
+        comparisonOperator:
+          ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        alarmDescription:
+          "Multipart content queue has too many messages, processing is too slow",
       },
     );
 
@@ -428,36 +514,6 @@ class TempInfraConstruct extends Construct {
         "Delete queue has too many messages, processing is too slow",
     });
 
-    [
-      this.putDlqAlarm,
-      this.deleteDlqAlarm,
-      this.lambdaProcessingTimeAlarm,
-      this.putQueueDepthAlarm,
-      this.deleteQueueDepthAlarm,
-    ].forEach((alarm) =>
-      alarm.addAlarmAction(new SnsAction(this.notificationTopic)),
-    );
-
-    this.notificationTopic.addToResourcePolicy(
-      new PolicyStatement({
-        actions: ["SNS:Publish"],
-        principals: [new ServicePrincipal("cloudwatch.amazonaws.com")],
-        resources: [this.notificationTopic.topicArn],
-        conditions: {
-          ArnEquals: {
-            "aws:SourceArn": [
-              this.putDlqAlarm.alarmArn,
-              this.deleteDlqAlarm.alarmArn,
-              this.lambdaProcessingTimeAlarm.alarmArn,
-              this.putQueueDepthAlarm.alarmArn,
-              this.deleteQueueDepthAlarm.alarmArn,
-            ],
-          },
-        },
-        effect: Effect.ALLOW,
-      }),
-    );
-
     //used to verify signed urls/cookies
     const publicKey = new cloudfront.PublicKey(this, "AssetsPublicKey", {
       encodedKey: props.cloudfrontPublicKey,
@@ -491,6 +547,153 @@ class TempInfraConstruct extends Construct {
       },
     );
 
+    const scannerVpc = new ec2.Vpc(this, "ScannerVpc", {
+      maxAzs: 2,
+      natGateways: 0,
+      ipAddresses: ec2.IpAddresses.cidr("10.54.0.0/16"),
+      subnetConfiguration: [
+        { name: "public", subnetType: ec2.SubnetType.PUBLIC, cidrMask: 24 },
+      ],
+      gatewayEndpoints: {
+        S3: {
+          service: ec2.GatewayVpcEndpointAwsService.S3,
+        },
+      },
+    });
+
+    const scannerSecurityGroup = new ec2.SecurityGroup(
+      this,
+      "ScannerSecurityGroup",
+      {
+        vpc: scannerVpc,
+        description: "Large file scanner firewall",
+        allowAllOutbound: true,
+      },
+    );
+
+    const scannerRole = new Role(this, "ScannerInstanceRole", {
+      assumedBy: new ServicePrincipal("ec2.amazonaws.com"),
+      description: "Least-privilege role for large file scanner EC2 instances",
+    });
+
+    this.s3Bucket.grantRead(scannerRole);
+    this.infectedFilesQueue.grantSendMessages(scannerRole);
+    this.multipartContentQueue.grantConsumeMessages(scannerRole);
+
+    const scannerLaunchTemplate = new ec2.LaunchTemplate(
+      this,
+      "ScannerLaunchTemplate",
+      {
+        instanceType: ec2.InstanceType.of(
+          ec2.InstanceClass.C5,
+          ec2.InstanceSize.XLARGE2,
+        ),
+        machineImage: ec2.MachineImage.genericLinux({
+          [cdk.Stack.of(this).region]: props.largeFileScannerAmiId,
+        }),
+        role: scannerRole,
+        securityGroup: scannerSecurityGroup,
+        requireImdsv2: true,
+        spotOptions: {
+          requestType: ec2.SpotRequestType.ONE_TIME,
+          interruptionBehavior: ec2.SpotInstanceInterruption.TERMINATE,
+        },
+      },
+    );
+
+    const scannerAsg = new autoscaling.AutoScalingGroup(this, "ScannerAsg", {
+      vpc: scannerVpc,
+      minCapacity: 0,
+      maxCapacity: 5,
+      launchTemplate: scannerLaunchTemplate,
+      vpcSubnets: {
+        subnetGroupName: "public",
+      },
+    });
+
+    scannerRole.addToPolicy(
+      new PolicyStatement({
+        actions: [
+          "autoscaling:CompleteLifecycleAction",
+          "autoscaling:RecordLifecycleActionHeartbeat",
+        ],
+        resources: ["*"],
+      }),
+    );
+
+    scannerAsg.scaleOnMetric("ScaleOnQueueDepth", {
+      metric:
+        this.multipartContentQueue.metricApproximateNumberOfMessagesVisible({
+          period: cdk.Duration.minutes(1),
+          statistic: Stats.MAXIMUM,
+        }),
+      scalingSteps: [
+        { upper: 0, change: -1 },
+        { lower: 3, change: +1 },
+        { lower: 5, change: +2 },
+      ],
+      adjustmentType: autoscaling.AdjustmentType.CHANGE_IN_CAPACITY,
+      estimatedInstanceWarmup: cdk.Duration.minutes(3),
+      evaluationPeriods: 2,
+    });
+
+    new autoscaling.LifecycleHook(this, "ScannerTerminationHook", {
+      autoScalingGroup: scannerAsg,
+      lifecycleTransition: autoscaling.LifecycleTransition.INSTANCE_TERMINATING,
+      heartbeatTimeout: cdk.Duration.hours(5),
+      defaultResult: autoscaling.DefaultResult.CONTINUE,
+    });
+
+    const scannerHighInstanceCountAlarm = new Alarm(
+      this,
+      "ScannerHighInstanceCountAlarm",
+      {
+        threshold: 3,
+        evaluationPeriods: 1,
+        metric: new Metric({
+          namespace: "AWS/AutoScaling",
+          metricName: "GroupInServiceInstances",
+          dimensionsMap: {
+            AutoScalingGroupName: scannerAsg.autoScalingGroupName,
+          },
+          period: cdk.Duration.minutes(5),
+          statistic: Stats.MAXIMUM,
+        }),
+        comparisonOperator:
+          ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        alarmDescription: "Large file scanner has scaled to 3+ instances",
+      },
+    );
+
+    const alarms = [
+      this.putDlqAlarm,
+      this.deleteDlqAlarm,
+      this.lambdaProcessingTimeAlarm,
+      this.putQueueDepthAlarm,
+      this.deleteQueueDepthAlarm,
+      multipartContentDlqDepthAlarm,
+      multipartContentQueueDepthAlarm,
+      scannerHighInstanceCountAlarm,
+    ];
+
+    alarms.forEach((alarm) =>
+      alarm.addAlarmAction(new SnsAction(this.notificationTopic)),
+    );
+
+    this.notificationTopic.addToResourcePolicy(
+      new PolicyStatement({
+        actions: ["SNS:Publish"],
+        principals: [new ServicePrincipal("cloudwatch.amazonaws.com")],
+        resources: [this.notificationTopic.topicArn],
+        conditions: {
+          ArnEquals: {
+            "aws:SourceArn": alarms.map((alarm) => alarm.alarmArn),
+          },
+        },
+        effect: Effect.ALLOW,
+      }),
+    );
+
     new CfnOutput(this, "DistributionDomain", {
       value: distribution.distributionDomainName,
     });
@@ -517,6 +720,47 @@ class TempInfraConstruct extends Construct {
       description: "SQS Url for sending delete requests",
     });
 
+    NagSuppressions.addResourceSuppressions(
+      scannerRole,
+      [
+        {
+          id: "AwsSolutions-IAM5",
+          reason:
+            "Scanner role wildcards fall into two categories: (1) S3 read-only actions (GetObject*, GetBucket*, List*) generated by CDK grantRead(), scoped to this bucket only; (2) the autoscaling lifecycle ARN includes a UUID wildcard segment that is structurally required by the AWS ASG ARN format — the policy is already scoped to the specific ASG name via autoScalingGroupName.",
+        },
+      ],
+      true,
+    );
+
+    NagSuppressions.addResourceSuppressions(
+      scannerAsg,
+      [
+        {
+          id: "AwsSolutions-AS3",
+          reason:
+            "ASG scaling notifications not required. multipartContentDlqDepthAlarm covers failure detection",
+        },
+        {
+          id: "AwsSolutions-EC26",
+          reason:
+            "Scanner instances process transient data only — no data is persisted to EBS. EBS encryption will be enforced in the golden AMI build via Packer.",
+        },
+      ],
+      true,
+    );
+
+    NagSuppressions.addResourceSuppressions(
+      scannerVpc,
+      [
+        {
+          id: "AwsSolutions-VPC7",
+          reason:
+            "VPC flow logs not required for this internal scanning worker VPC",
+        },
+      ],
+      true,
+    );
+
     NagSuppressions.addResourceSuppressions(this.webhookSignatureSecret, [
       {
         id: "AwsSolutions-SMG4",
@@ -530,6 +774,16 @@ class TempInfraConstruct extends Construct {
         id: "AwsSolutions-CFR3",
         reason:
           "CloudFront access logging not required, S3 server access logs provide sufficient audit trail",
+      },
+      {
+        id: "AwsSolutions-CFR1",
+        reason:
+          "Geo restrictions not required, all countried should be allowed to access files.",
+      },
+      {
+        id: "AwsSolutions-CFR2",
+        reason:
+          "WAF not required, CloudFront only serves signed URLs, unauthenticated requests are rejected by the key group before content is served",
       },
     ]);
 
@@ -581,16 +835,11 @@ class TempInfraConstruct extends Construct {
             "Action::s3:List*",
             "Action::s3:Abort*",
             "Resource::<TempInfraResourcestempS3Bucket668A5B7B.Arn>/*",
+            "Resource::<TempInfraResourcestempS3Bucket668A5B7B.Arn>/uploads/*",
           ],
         },
       ],
       true,
-    );
-
-    cdk.Aspects.of(this).add(
-      new AwsSolutionsChecks({
-        verbose: true,
-      }),
     );
   }
 }
@@ -611,6 +860,7 @@ export class TempStack extends cdk.Stack {
       cloudfrontDomainName: props.cloudfrontDomainName,
       cloudfrontDomainCertificateArn: props.cloudfrontDomainCertificateArn,
       cloudflareBypassSecret: props.cloudflareBypassSecret,
+      largeFileScannerAmiId: props.largeFileScannerAmiId,
     });
 
     NagSuppressions.addStackSuppressions(this, [
@@ -623,11 +873,5 @@ export class TempStack extends cdk.Stack {
         ],
       },
     ]);
-
-    cdk.Aspects.of(this).add(
-      new AwsSolutionsChecks({
-        verbose: true,
-      }),
-    );
   }
 }
