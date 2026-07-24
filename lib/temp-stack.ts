@@ -140,6 +140,11 @@ class TempInfraConstruct extends Construct {
           prefix: "access-logs/",
           expiration: cdk.Duration.days(31),
         },
+        {
+          enabled: true,
+          prefix: "uploads/",
+          abortIncompleteMultipartUploadAfter: cdk.Duration.days(2),
+        },
       ],
     });
 

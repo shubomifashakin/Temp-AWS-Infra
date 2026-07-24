@@ -110,6 +110,13 @@ xwIDAQAB
               ExpirationInDays: 31,
               Prefix: "access-logs/",
             },
+            {
+              Status: "Enabled",
+              Prefix: "uploads/",
+              AbortIncompleteMultipartUpload: {
+                DaysAfterInitiation: 2,
+              },
+            },
           ],
         },
       });
