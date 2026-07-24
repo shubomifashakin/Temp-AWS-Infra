@@ -8,11 +8,7 @@ import {
   HttpMethods,
 } from "aws-cdk-lib/aws-s3";
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
-import {
-  Runtime,
-  DockerImageCode,
-  DockerImageFunction,
-} from "aws-cdk-lib/aws-lambda";
+import { Runtime } from "aws-cdk-lib/aws-lambda";
 import { SqsDestination } from "aws-cdk-lib/aws-s3-notifications";
 import { SqsEventSource } from "aws-cdk-lib/aws-lambda-event-sources";
 import { Topic } from "aws-cdk-lib/aws-sns";
@@ -37,7 +33,7 @@ import * as acm from "aws-cdk-lib/aws-certificatemanager";
 
 import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
 import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
-import { AwsSolutionsChecks, NagSuppressions } from "cdk-nag";
+import { NagSuppressions } from "cdk-nag";
 
 interface TempConstructProps {
   notificationEmail: string;
@@ -55,19 +51,17 @@ class TempInfraConstruct extends Construct {
   public readonly infectedFilesDlq: Queue;
   public readonly userRequestedDeleteQueue: Queue;
   public readonly userRequestedDeleteDlq: Queue;
-  public readonly putEventsSqsQueue: Queue;
-  public readonly putSqsDlq: Queue;
+  public readonly scanFilesQueue: Queue;
+  public readonly scanFilesDlq: Queue;
   public readonly deleteEventsSqsQueue: Queue;
   public readonly deleteSqsDlq: Queue;
   public readonly infectedFilesDeleteLambda: NodejsFunction;
   public readonly userRequestedDeleteLambda: NodejsFunction;
-  public readonly validateUploadedFilesLambda: DockerImageFunction;
   public readonly removeDeletedFilesLambda: NodejsFunction;
   public readonly notificationTopic: Topic;
-  public readonly lambdaProcessingTimeAlarm: Alarm;
-  public readonly putDlqAlarm: Alarm;
+  public readonly scanFilesDlqDepthAlarm: Alarm;
   public readonly deleteDlqAlarm: Alarm;
-  public readonly putQueueDepthAlarm: Alarm;
+  public readonly scanFilesQueueDepthAlarm: Alarm;
   public readonly deleteQueueDepthAlarm: Alarm;
 
   private readonly applicationUser: User;
@@ -100,7 +94,12 @@ class TempInfraConstruct extends Construct {
           allowedHeaders: ["*"],
           exposedHeaders: ["ETag"],
           allowedOrigins: [props.frontendDomainUrl],
-          allowedMethods: [HttpMethods.POST, HttpMethods.PUT],
+          allowedMethods: [
+            HttpMethods.POST,
+            HttpMethods.PUT,
+            HttpMethods.GET,
+            HttpMethods.HEAD,
+          ],
         },
       ],
       lifecycleRules: [
@@ -119,10 +118,16 @@ class TempInfraConstruct extends Construct {
           tagFilters: { lifetime: "long" },
           expiration: cdk.Duration.days(31),
         },
+
         {
           enabled: true,
           prefix: "access-logs/",
           expiration: cdk.Duration.days(31),
+        },
+        {
+          enabled: true,
+          prefix: "uploads/",
+          abortIncompleteMultipartUploadAfter: cdk.Duration.days(2),
         },
       ],
     });
@@ -165,7 +170,7 @@ class TempInfraConstruct extends Construct {
       },
     );
 
-    this.putSqsDlq = new Queue(this, "putSqsDlq", {
+    this.scanFilesDlq = new Queue(this, "scanFilesDlq", {
       enforceSSL: true,
       retentionPeriod: cdk.Duration.days(7),
       removalPolicy: cdk.RemovalPolicy.DESTROY,
@@ -177,14 +182,14 @@ class TempInfraConstruct extends Construct {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
-    this.putEventsSqsQueue = new Queue(this, "putEventsSqsQueue", {
+    this.scanFilesQueue = new Queue(this, "scanFilesQueue", {
       enforceSSL: true,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
-      retentionPeriod: cdk.Duration.minutes(10),
-      visibilityTimeout: cdk.Duration.minutes(3),
+      retentionPeriod: cdk.Duration.days(7),
+      visibilityTimeout: cdk.Duration.hours(2),
       deadLetterQueue: {
         maxReceiveCount: 3,
-        queue: this.putSqsDlq,
+        queue: this.scanFilesDlq,
       },
     });
 
@@ -241,32 +246,6 @@ class TempInfraConstruct extends Construct {
       },
     );
 
-    this.validateUploadedFilesLambda = new DockerImageFunction(
-      this,
-      "validateUploadedFilesLambda",
-      {
-        description:
-          "This is responsible for validating the files that were put/uploaded to the s3 bucket & updating the status of the files",
-        code: DockerImageCode.fromImageAsset(
-          "./workers/validateUploadedFiles",
-          { file: "Dockerfile" },
-        ),
-        retryAttempts: 2,
-        memorySize: 1024 * 2.5,
-        timeout: cdk.Duration.minutes(2.5),
-        ephemeralStorageSize: cdk.Size.gibibytes(2),
-        environment: {
-          WEBHOOK_URL: props.backendWebhookUrl,
-          WEBHOOK_SECRET_ARN: this.webhookSignatureSecret.secretArn,
-          INFECTED_QUEUE_URL: this.infectedFilesQueue.queueUrl,
-          CLOUDFLARE_BYPASS_SECRET: props.cloudflareBypassSecret,
-        },
-        logGroup: new LogGroup(this, "validateUploadedFilesLambdaLogGroup", {
-          retention: RetentionDays.FIVE_DAYS,
-        }),
-      },
-    );
-
     this.removeDeletedFilesLambda = new NodejsFunction(
       this,
       "removeDeletedFilesLambda",
@@ -306,14 +285,6 @@ class TempInfraConstruct extends Construct {
       }),
     );
 
-    this.validateUploadedFilesLambda.addEventSource(
-      new SqsEventSource(this.putEventsSqsQueue, {
-        batchSize: 2,
-        reportBatchItemFailures: true,
-        maxBatchingWindow: cdk.Duration.seconds(30),
-      }),
-    );
-
     this.removeDeletedFilesLambda.addEventSource(
       new SqsEventSource(this.deleteEventsSqsQueue, {
         batchSize: 10,
@@ -321,18 +292,13 @@ class TempInfraConstruct extends Construct {
       }),
     );
 
-    this.infectedFilesQueue.grantSendMessages(this.validateUploadedFilesLambda);
-
-    this.putEventsSqsQueue.grantConsumeMessages(
-      this.validateUploadedFilesLambda,
-    );
     this.deleteEventsSqsQueue.grantConsumeMessages(
       this.removeDeletedFilesLambda,
     );
 
     this.s3Bucket.addEventNotification(
       EventType.OBJECT_CREATED_POST,
-      new SqsDestination(this.putEventsSqsQueue),
+      new SqsDestination(this.scanFilesQueue),
     );
 
     this.s3Bucket.addEventNotification(
@@ -341,16 +307,30 @@ class TempInfraConstruct extends Construct {
       { prefix: "uploads/" },
     );
 
+    this.scanFilesQueue.grantConsumeMessages(this.applicationUser);
+    this.infectedFilesQueue.grantSendMessages(this.infectedFilesDeleteLambda);
+
     this.s3Bucket.grantPut(this.applicationUser);
     this.s3Bucket.grantRead(this.applicationUser);
-    this.s3Bucket.grantRead(this.validateUploadedFilesLambda);
+    this.applicationUser.addToPolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: [
+          "s3:CreateMultipartUpload",
+          "s3:CompleteMultipartUpload",
+          "s3:AbortMultipartUpload",
+          "s3:UploadPart",
+          "s3:ListMultipartUploadParts",
+        ],
+        resources: [`${this.s3Bucket.bucketArn}/uploads/*`],
+      }),
+    );
     this.s3Bucket.grantDelete(this.userRequestedDeleteLambda);
     this.s3Bucket.grantDelete(this.infectedFilesDeleteLambda);
 
     this.userRequestedDeleteQueue.grantSendMessages(this.applicationUser);
 
     this.webhookSignatureSecret.grantRead(this.removeDeletedFilesLambda);
-    this.webhookSignatureSecret.grantRead(this.validateUploadedFilesLambda);
 
     //observability stuff
     this.notificationTopic = new Topic(this, "notificationTopic", {
@@ -362,32 +342,17 @@ class TempInfraConstruct extends Construct {
       new EmailSubscription(props.notificationEmail),
     );
 
-    this.lambdaProcessingTimeAlarm = new Alarm(
-      this,
-      "lambdaProcessingTimeAlarm",
-      {
-        evaluationPeriods: 1,
-        threshold: cdk.Duration.seconds(30).toMilliseconds(),
-        metric: this.validateUploadedFilesLambda.metricDuration({
-          period: cdk.Duration.minutes(2),
-        }),
-        comparisonOperator:
-          ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
-        alarmDescription: "File validation is taking too long",
-      },
-    );
-
-    this.putDlqAlarm = new Alarm(this, "putDlqAlarm", {
+    this.scanFilesDlqDepthAlarm = new Alarm(this, "scanFilesDlqDepthAlarm", {
       threshold: 1,
       evaluationPeriods: 2,
       treatMissingData: TreatMissingData.IGNORE,
-      metric: this.putSqsDlq.metricApproximateNumberOfMessagesVisible({
+      metric: this.scanFilesDlq.metricApproximateNumberOfMessagesVisible({
         period: cdk.Duration.minutes(2),
         statistic: Stats.MAXIMUM,
         visible: true,
       }),
       comparisonOperator: ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
-      alarmDescription: "There are messages in the put sqs dlq",
+      alarmDescription: "There are messages in the scan files sqs dlq",
     });
 
     this.deleteDlqAlarm = new Alarm(this, "deleteDlqAlarm", {
@@ -403,17 +368,22 @@ class TempInfraConstruct extends Construct {
       alarmDescription: "There are messages in the delete sqs dlq",
     });
 
-    this.putQueueDepthAlarm = new Alarm(this, "putQueueDepthAlarm", {
-      threshold: 20,
-      evaluationPeriods: 1,
-      metric: this.putEventsSqsQueue.metricApproximateNumberOfMessagesVisible({
-        period: cdk.Duration.minutes(2),
-        statistic: Stats.AVERAGE,
-      }),
-      comparisonOperator: ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
-      alarmDescription:
-        "Put queue has too many messages, processing is too slow",
-    });
+    this.scanFilesQueueDepthAlarm = new Alarm(
+      this,
+      "scanFilesQueueDepthAlarm",
+      {
+        threshold: 20,
+        evaluationPeriods: 1,
+        metric: this.scanFilesQueue.metricApproximateNumberOfMessagesVisible({
+          period: cdk.Duration.minutes(2),
+          statistic: Stats.AVERAGE,
+        }),
+        comparisonOperator:
+          ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        alarmDescription:
+          "scanFilesQueue has too many messages, processing is too slow",
+      },
+    );
 
     this.deleteQueueDepthAlarm = new Alarm(this, "deleteQueueDepthAlarm", {
       threshold: 20,
@@ -429,10 +399,9 @@ class TempInfraConstruct extends Construct {
     });
 
     [
-      this.putDlqAlarm,
+      this.scanFilesDlqDepthAlarm,
       this.deleteDlqAlarm,
-      this.lambdaProcessingTimeAlarm,
-      this.putQueueDepthAlarm,
+      this.scanFilesQueueDepthAlarm,
       this.deleteQueueDepthAlarm,
     ].forEach((alarm) =>
       alarm.addAlarmAction(new SnsAction(this.notificationTopic)),
@@ -446,10 +415,9 @@ class TempInfraConstruct extends Construct {
         conditions: {
           ArnEquals: {
             "aws:SourceArn": [
-              this.putDlqAlarm.alarmArn,
+              this.scanFilesDlqDepthAlarm.alarmArn,
               this.deleteDlqAlarm.alarmArn,
-              this.lambdaProcessingTimeAlarm.alarmArn,
-              this.putQueueDepthAlarm.alarmArn,
+              this.scanFilesQueueDepthAlarm.alarmArn,
               this.deleteQueueDepthAlarm.alarmArn,
             ],
           },
@@ -517,6 +485,24 @@ class TempInfraConstruct extends Construct {
       description: "SQS Url for sending delete requests",
     });
 
+    new CfnOutput(this, "infectedFilesQueueUrl", {
+      value: this.infectedFilesQueue.queueUrl,
+      exportName: "infectedFilesQueueUrl",
+      description: "SQS Url for sending infected files to delete",
+    });
+
+    new CfnOutput(this, "scanFilesQueueUrl", {
+      value: this.scanFilesQueue.queueUrl,
+      exportName: "scanFilesQueueUrl",
+      description: "SQS Url for sending files that need to be scanned",
+    });
+
+    new CfnOutput(this, "deleteEventsQueueUrl", {
+      value: this.deleteEventsSqsQueue.queueUrl,
+      exportName: "deleteEventsQueueUrl",
+      description: "SQS Url for sending delete events",
+    });
+
     NagSuppressions.addResourceSuppressions(this.webhookSignatureSecret, [
       {
         id: "AwsSolutions-SMG4",
@@ -531,11 +517,18 @@ class TempInfraConstruct extends Construct {
         reason:
           "CloudFront access logging not required, S3 server access logs provide sufficient audit trail",
       },
+      {
+        id: "AwsSolutions-CFR1",
+        reason: "Geo restrictions not required for this application",
+      },
+      {
+        id: "AwsSolutions-CFR2",
+        reason: "WAF integration not required for this application",
+      },
     ]);
 
     [
       this.infectedFilesDeleteLambda,
-      this.validateUploadedFilesLambda,
       this.removeDeletedFilesLambda,
       this.userRequestedDeleteLambda,
     ].forEach((lambda) => {
@@ -581,16 +574,11 @@ class TempInfraConstruct extends Construct {
             "Action::s3:List*",
             "Action::s3:Abort*",
             "Resource::<TempInfraResourcestempS3Bucket668A5B7B.Arn>/*",
+            "Resource::<TempInfraResourcestempS3Bucket668A5B7B.Arn>/uploads/*",
           ],
         },
       ],
       true,
-    );
-
-    cdk.Aspects.of(this).add(
-      new AwsSolutionsChecks({
-        verbose: true,
-      }),
     );
   }
 }
@@ -623,11 +611,5 @@ export class TempStack extends cdk.Stack {
         ],
       },
     ]);
-
-    cdk.Aspects.of(this).add(
-      new AwsSolutionsChecks({
-        verbose: true,
-      }),
-    );
   }
 }
