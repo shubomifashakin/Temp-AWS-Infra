@@ -103,7 +103,6 @@ class TempInfraConstruct extends Construct {
         },
       ],
       lifecycleRules: [
-        // FIXME: REMOVE OLD LIFECYCLE RULES AFTER MIGRATION
         {
           enabled: true,
           tagFilters: { lifetime: "short" },
@@ -117,21 +116,6 @@ class TempInfraConstruct extends Construct {
         {
           enabled: true,
           tagFilters: { lifetime: "long" },
-          expiration: cdk.Duration.days(31),
-        },
-        {
-          enabled: true,
-          tagFilters: { retention: "days-7" },
-          expiration: cdk.Duration.days(7),
-        },
-        {
-          enabled: true,
-          tagFilters: { retention: "days-14" },
-          expiration: cdk.Duration.days(14),
-        },
-        {
-          enabled: true,
-          tagFilters: { retention: "days-31" },
           expiration: cdk.Duration.days(31),
         },
 

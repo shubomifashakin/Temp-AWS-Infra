@@ -75,36 +75,7 @@ xwIDAQAB
                 },
               ],
             },
-            {
-              Status: "Enabled",
-              ExpirationInDays: 7,
-              TagFilters: [
-                {
-                  Key: "retention",
-                  Value: "days-7",
-                },
-              ],
-            },
-            {
-              Status: "Enabled",
-              ExpirationInDays: 14,
-              TagFilters: [
-                {
-                  Key: "retention",
-                  Value: "days-14",
-                },
-              ],
-            },
-            {
-              Status: "Enabled",
-              ExpirationInDays: 31,
-              TagFilters: [
-                {
-                  Key: "retention",
-                  Value: "days-31",
-                },
-              ],
-            },
+
             {
               Status: "Enabled",
               ExpirationInDays: 31,
