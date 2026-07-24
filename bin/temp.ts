@@ -52,6 +52,5 @@ new TempStack(app, "TempStack", {
 cdk.Aspects.of(app).add(
   new AwsSolutionsChecks({
     verbose: true,
-    logIgnores: true,
   }),
 );

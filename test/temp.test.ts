@@ -11,10 +11,15 @@ describe("TempStack Infrastructure", () => {
       notificationEmail: "testemail@gmail.com",
       frontendDomainUrl: "testdomain.com",
       backendWebhookUrl: "testwebhook.com",
-      cloudfrontPublicKey: Buffer.from(
-        process.env.CLOUDFRONT_PUBLIC_KEY_BASE64!,
-        "base64",
-      ).toString("utf-8"),
+      cloudfrontPublicKey: `-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA2a2rwplBQLzHPZe5TNJK
+JLepPP8LxLqDg6P5rFLJ2DPXZ7rwnbA0r/kEgY9GqJReSLvlBGLBcSmJNQp0h0A5
+kVleBE+YbVLOajH4r3jXJpSg1Y0Z6xdX5+dn9ZBH9EJCVLA3Y5sJHwi6tTGdM0Lm
+QYR2iShCEgfD7n5xJYqrDLvM7uh0j5bSnP3pHx/c9d3R2P0D5LALWzrjHhOkEI2K
+b0MFLs0gL+M2NXPjfJRNg0FEqRIFZRJb+GhLpxuHJmrn2lfIKN2hKJnVOhXS8nYA
+VGS3ZO9uT5lHG6g6e7HfT8MhR7mSXz6/OjnZ8Rp7U/7fhMQFpMj7BOVk7iqIpOe4
+xwIDAQAB
+-----END PUBLIC KEY-----`,
       cloudfrontDomainName: "testdomain.com",
       cloudfrontDomainCertificateArn:
         "arn:aws:acm:us-east-1:123456789012:certificate/12345678-1234-1234-1234-123456789012",
@@ -30,8 +35,8 @@ describe("TempStack Infrastructure", () => {
       template.resourceCountIs("AWS::S3::Bucket", 1);
       template.resourceCountIs("AWS::SQS::Queue", 8);
       template.resourceCountIs("AWS::SNS::Topic", 1);
-      template.resourceCountIs("AWS::Lambda::Function", 5);
-      template.resourceCountIs("AWS::CloudWatch::Alarm", 5);
+      template.resourceCountIs("AWS::Lambda::Function", 4);
+      template.resourceCountIs("AWS::CloudWatch::Alarm", 4);
     });
   });
 
@@ -67,6 +72,36 @@ describe("TempStack Infrastructure", () => {
                 {
                   Key: "lifetime",
                   Value: "long",
+                },
+              ],
+            },
+            {
+              Status: "Enabled",
+              ExpirationInDays: 7,
+              TagFilters: [
+                {
+                  Key: "retention",
+                  Value: "days-7",
+                },
+              ],
+            },
+            {
+              Status: "Enabled",
+              ExpirationInDays: 14,
+              TagFilters: [
+                {
+                  Key: "retention",
+                  Value: "days-14",
+                },
+              ],
+            },
+            {
+              Status: "Enabled",
+              ExpirationInDays: 31,
+              TagFilters: [
+                {
+                  Key: "retention",
+                  Value: "days-31",
                 },
               ],
             },
@@ -115,22 +150,6 @@ describe("TempStack Infrastructure", () => {
   });
 
   describe("Lambda Functions", () => {
-    test("validateUploadedFilesLambda has correct configuration", () => {
-      template.hasResourceProperties("AWS::Lambda::Function", {
-        MemorySize: 2560,
-        Timeout: 150,
-        Description: Match.stringLikeRegexp(".*validating.*files.*"),
-        Environment: {
-          Variables: {
-            WEBHOOK_SECRET_ARN: {
-              Ref: Match.anyValue(),
-            },
-            CLOUDFLARE_BYPASS_SECRET: "test-secret",
-          },
-        },
-      });
-    });
-
     test("removeDeletedFilesLambda has correct configuration", () => {
       template.hasResourceProperties("AWS::Lambda::Function", {
         Runtime: "nodejs24.x",
@@ -159,15 +178,6 @@ describe("TempStack Infrastructure", () => {
   });
 
   describe("CloudWatch Alarms", () => {
-    test("lambdaProcessingTimeAlarm is configured correctly", () => {
-      template.hasResourceProperties("AWS::CloudWatch::Alarm", {
-        Threshold: 30000,
-        EvaluationPeriods: 1,
-        ComparisonOperator: "GreaterThanOrEqualToThreshold",
-        AlarmDescription: "File validation is taking too long",
-      });
-    });
-
     test("putDlqAlarm is configured correctly", () => {
       template.hasResourceProperties("AWS::CloudWatch::Alarm", {
         Threshold: 1,
@@ -271,14 +281,6 @@ describe("TempStack Infrastructure", () => {
   });
 
   describe("Event Source Mappings", () => {
-    test("validateUploadedFilesLambda has SQS event source", () => {
-      template.hasResourceProperties("AWS::Lambda::EventSourceMapping", {
-        BatchSize: 5,
-        MaximumBatchingWindowInSeconds: 30,
-        FunctionResponseTypes: ["ReportBatchItemFailures"],
-      });
-    });
-
     test("removeDeletedFilesLambda has SQS event source", () => {
       template.hasResourceProperties("AWS::Lambda::EventSourceMapping", {
         BatchSize: 10,
