@@ -178,12 +178,12 @@ xwIDAQAB
   });
 
   describe("CloudWatch Alarms", () => {
-    test("putDlqAlarm is configured correctly", () => {
+    test("scanFilesDlqAlarm is configured correctly", () => {
       template.hasResourceProperties("AWS::CloudWatch::Alarm", {
         Threshold: 1,
         EvaluationPeriods: 2,
         ComparisonOperator: "GreaterThanOrEqualToThreshold",
-        AlarmDescription: "There are messages in the put sqs dlq",
+        AlarmDescription: "There are messages in the scan files sqs dlq",
         TreatMissingData: "ignore",
       });
     });
@@ -198,13 +198,13 @@ xwIDAQAB
       });
     });
 
-    test("putQueueDepthAlarm is configured correctly", () => {
+    test("scanFilesQueueDepthAlarm is configured correctly", () => {
       template.hasResourceProperties("AWS::CloudWatch::Alarm", {
         Threshold: 20,
         EvaluationPeriods: 1,
         ComparisonOperator: "GreaterThanOrEqualToThreshold",
         AlarmDescription:
-          "Put queue has too many messages, processing is too slow",
+          "scanFilesQueue has too many messages, processing is too slow",
       });
     });
 

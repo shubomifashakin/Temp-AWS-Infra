@@ -51,17 +51,17 @@ class TempInfraConstruct extends Construct {
   public readonly infectedFilesDlq: Queue;
   public readonly userRequestedDeleteQueue: Queue;
   public readonly userRequestedDeleteDlq: Queue;
-  public readonly putEventsSqsQueue: Queue;
-  public readonly putSqsDlq: Queue;
+  public readonly scanFilesQueue: Queue;
+  public readonly scanFilesDlq: Queue;
   public readonly deleteEventsSqsQueue: Queue;
   public readonly deleteSqsDlq: Queue;
   public readonly infectedFilesDeleteLambda: NodejsFunction;
   public readonly userRequestedDeleteLambda: NodejsFunction;
   public readonly removeDeletedFilesLambda: NodejsFunction;
   public readonly notificationTopic: Topic;
-  public readonly putDlqAlarm: Alarm;
+  public readonly scanFilesDlqDepthAlarm: Alarm;
   public readonly deleteDlqAlarm: Alarm;
-  public readonly putQueueDepthAlarm: Alarm;
+  public readonly scanFilesQueueDepthAlarm: Alarm;
   public readonly deleteQueueDepthAlarm: Alarm;
 
   private readonly applicationUser: User;
@@ -181,7 +181,7 @@ class TempInfraConstruct extends Construct {
       },
     );
 
-    this.putSqsDlq = new Queue(this, "putSqsDlq", {
+    this.scanFilesDlq = new Queue(this, "scanFilesDlq", {
       enforceSSL: true,
       retentionPeriod: cdk.Duration.days(7),
       removalPolicy: cdk.RemovalPolicy.DESTROY,
@@ -193,14 +193,14 @@ class TempInfraConstruct extends Construct {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
-    this.putEventsSqsQueue = new Queue(this, "putEventsSqsQueue", {
+    this.scanFilesQueue = new Queue(this, "scanFilesQueue", {
       enforceSSL: true,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       retentionPeriod: cdk.Duration.days(7),
       visibilityTimeout: cdk.Duration.hours(2),
       deadLetterQueue: {
         maxReceiveCount: 3,
-        queue: this.putSqsDlq,
+        queue: this.scanFilesDlq,
       },
     });
 
@@ -309,7 +309,7 @@ class TempInfraConstruct extends Construct {
 
     this.s3Bucket.addEventNotification(
       EventType.OBJECT_CREATED_POST,
-      new SqsDestination(this.putEventsSqsQueue),
+      new SqsDestination(this.scanFilesQueue),
     );
 
     this.s3Bucket.addEventNotification(
@@ -318,7 +318,7 @@ class TempInfraConstruct extends Construct {
       { prefix: "uploads/" },
     );
 
-    this.putEventsSqsQueue.grantConsumeMessages(this.applicationUser);
+    this.scanFilesQueue.grantConsumeMessages(this.applicationUser);
     this.infectedFilesQueue.grantSendMessages(this.infectedFilesDeleteLambda);
 
     this.s3Bucket.grantPut(this.applicationUser);
@@ -353,17 +353,17 @@ class TempInfraConstruct extends Construct {
       new EmailSubscription(props.notificationEmail),
     );
 
-    this.putDlqAlarm = new Alarm(this, "putDlqAlarm", {
+    this.scanFilesDlqDepthAlarm = new Alarm(this, "scanFilesDlqDepthAlarm", {
       threshold: 1,
       evaluationPeriods: 2,
       treatMissingData: TreatMissingData.IGNORE,
-      metric: this.putSqsDlq.metricApproximateNumberOfMessagesVisible({
+      metric: this.scanFilesDlq.metricApproximateNumberOfMessagesVisible({
         period: cdk.Duration.minutes(2),
         statistic: Stats.MAXIMUM,
         visible: true,
       }),
       comparisonOperator: ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
-      alarmDescription: "There are messages in the put sqs dlq",
+      alarmDescription: "There are messages in the scan files sqs dlq",
     });
 
     this.deleteDlqAlarm = new Alarm(this, "deleteDlqAlarm", {
@@ -379,17 +379,22 @@ class TempInfraConstruct extends Construct {
       alarmDescription: "There are messages in the delete sqs dlq",
     });
 
-    this.putQueueDepthAlarm = new Alarm(this, "putQueueDepthAlarm", {
-      threshold: 20,
-      evaluationPeriods: 1,
-      metric: this.putEventsSqsQueue.metricApproximateNumberOfMessagesVisible({
-        period: cdk.Duration.minutes(2),
-        statistic: Stats.AVERAGE,
-      }),
-      comparisonOperator: ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
-      alarmDescription:
-        "Put queue has too many messages, processing is too slow",
-    });
+    this.scanFilesQueueDepthAlarm = new Alarm(
+      this,
+      "scanFilesQueueDepthAlarm",
+      {
+        threshold: 20,
+        evaluationPeriods: 1,
+        metric: this.scanFilesQueue.metricApproximateNumberOfMessagesVisible({
+          period: cdk.Duration.minutes(2),
+          statistic: Stats.AVERAGE,
+        }),
+        comparisonOperator:
+          ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        alarmDescription:
+          "scanFilesQueue has too many messages, processing is too slow",
+      },
+    );
 
     this.deleteQueueDepthAlarm = new Alarm(this, "deleteQueueDepthAlarm", {
       threshold: 20,
@@ -405,9 +410,9 @@ class TempInfraConstruct extends Construct {
     });
 
     [
-      this.putDlqAlarm,
+      this.scanFilesDlqDepthAlarm,
       this.deleteDlqAlarm,
-      this.putQueueDepthAlarm,
+      this.scanFilesQueueDepthAlarm,
       this.deleteQueueDepthAlarm,
     ].forEach((alarm) =>
       alarm.addAlarmAction(new SnsAction(this.notificationTopic)),
@@ -421,9 +426,9 @@ class TempInfraConstruct extends Construct {
         conditions: {
           ArnEquals: {
             "aws:SourceArn": [
-              this.putDlqAlarm.alarmArn,
+              this.scanFilesDlqDepthAlarm.alarmArn,
               this.deleteDlqAlarm.alarmArn,
-              this.putQueueDepthAlarm.alarmArn,
+              this.scanFilesQueueDepthAlarm.alarmArn,
               this.deleteQueueDepthAlarm.alarmArn,
             ],
           },
@@ -497,10 +502,10 @@ class TempInfraConstruct extends Construct {
       description: "SQS Url for sending infected files to delete",
     });
 
-    new CfnOutput(this, "putEventsQueueUrl", {
-      value: this.putEventsSqsQueue.queueUrl,
-      exportName: "putEventsQueueUrl",
-      description: "SQS Url for sending put events",
+    new CfnOutput(this, "scanFilesQueueUrl", {
+      value: this.scanFilesQueue.queueUrl,
+      exportName: "scanFilesQueueUrl",
+      description: "SQS Url for sending files that need to be scanned",
     });
 
     new CfnOutput(this, "deleteEventsQueueUrl", {
