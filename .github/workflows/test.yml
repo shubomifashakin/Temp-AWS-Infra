@@ -74,9 +74,6 @@ jobs:
       - name: Run Synth
         run: npx cdk synth
 
-      - name: Stack Changes
-        run: npx cdk diff
-
   notify:
     name: Notify Discord
     runs-on: ubuntu-latest
