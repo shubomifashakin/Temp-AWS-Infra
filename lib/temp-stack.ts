@@ -141,7 +141,7 @@ class TempInfraConstruct extends Construct {
     this.infectedFilesQueue = new Queue(this, "infectedFilesQueue", {
       enforceSSL: true,
       visibilityTimeout: cdk.Duration.minutes(3),
-      retentionPeriod: cdk.Duration.minutes(10),
+      retentionPeriod: cdk.Duration.days(3),
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       deadLetterQueue: {
         maxReceiveCount: 3,
@@ -161,7 +161,7 @@ class TempInfraConstruct extends Construct {
       {
         enforceSSL: true,
         visibilityTimeout: cdk.Duration.minutes(3),
-        retentionPeriod: cdk.Duration.minutes(10),
+        retentionPeriod: cdk.Duration.days(3),
         removalPolicy: cdk.RemovalPolicy.DESTROY,
         deadLetterQueue: {
           maxReceiveCount: 3,
@@ -196,7 +196,7 @@ class TempInfraConstruct extends Construct {
     this.deleteEventsSqsQueue = new Queue(this, "deleteEventsSqsQueue", {
       enforceSSL: true,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
-      retentionPeriod: cdk.Duration.minutes(10),
+      retentionPeriod: cdk.Duration.days(3),
       visibilityTimeout: cdk.Duration.minutes(1.5),
       deadLetterQueue: {
         maxReceiveCount: 3,
