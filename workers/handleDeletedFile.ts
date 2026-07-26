@@ -70,7 +70,7 @@ export async function handler(event: SQSEvent) {
   for (const record of event.Records) {
     const body = JSON.parse(record.body) as S3EventNotification;
 
-    for (const s3Record of body.Records) {
+    for (const s3Record of body.Records ?? []) {
       keys.push(s3Record.s3.object.key);
     }
   }
